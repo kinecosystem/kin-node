@@ -1,6 +1,6 @@
 {
-  "name": "kin-node-internal",
-  "version": "0.1.0",
+  "name": "@kikengineering/kin-sdk-v2",
+  "version": "0.1.5",
   "description": "Kin Node SDK",
   "author": "Kik Engineering",
   "email": "engineering@kik.com",
@@ -8,6 +8,11 @@
   "exclude": [
     "node_modules",
     "**/*.spec.ts"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/"
   ],
   "dependencies": {
     "@grpc/grpc-js": "^1.1.2",
@@ -43,6 +48,7 @@
   },
   "scripts": {
     "test": "jest",
+    "build": "tsc",
     "lint": "eslint . --ext .ts"
   },
   "jest": {
