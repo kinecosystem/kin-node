@@ -40,5 +40,3 @@ dist/**/*
 # ignore yarn.lock
 yarn-error.log
 yarn.lock
-
-examples/
