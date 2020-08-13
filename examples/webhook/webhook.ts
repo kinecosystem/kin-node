@@ -3,16 +3,15 @@ import { Keypair } from "stellar-base";
 import { Environment, PrivateKey } from "../../src";
 import { Event, EventsHandler, SignTransactionHandler, SignTransactionRequest, SignTransactionResponse } from "../../src/webhook";
 
-const port = process.env["PORT"];
+const port = process.env["PORT"] || 8080;
 const secret = process.env["WEBHOOK_SECRET"];
-const whitelistSeed = process.env["WHITELIST_SEED"];
-
-if (!whitelistSeed) {
-    console.log("missing whitelist seed");
+const webhookSeed = process.env["WEBHOOK_SEED"];
+if (!webhookSeed) {
+    console.log("missing webhook seed");
     process.exit(1);
 }
 
-const whitelistKey = PrivateKey.fromString(whitelistSeed);
+const whitelistKey = PrivateKey.fromString(webhookSeed);
 
 const app = express();
 
