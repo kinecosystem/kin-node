@@ -168,13 +168,18 @@ export class Client {
         let invoiceList: commonpb.InvoiceList | undefined;
         if (payment.memo) {
             memo = Memo.text(payment.memo);
-        } else if (payment.invoice) {
-            invoiceList = new commonpb.InvoiceList();
-            invoiceList.addInvoices(invoiceToProto(payment.invoice));
+        } else if (this.appIndex) {
+            let fk = Buffer.alloc(29);
 
-            const serialized = invoiceList.serializeBinary();
-            const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex")
-            const kinMemo = KinMemo.new(1, TransactionType.Spend, this.appIndex!, buf)
+            if (payment.invoice) {
+                invoiceList = new commonpb.InvoiceList();
+                invoiceList.addInvoices(invoiceToProto(payment.invoice));
+
+                const serialized = invoiceList.serializeBinary();
+                fk = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex")
+            }
+
+            const kinMemo = KinMemo.new(1, TransactionType.Spend, this.appIndex!, fk)
             memo = new Memo(MemoHash, kinMemo.buffer);
         }
 
@@ -356,7 +361,7 @@ export class Client {
         let invoiceList: commonpb.InvoiceList | undefined;
         if (batch.memo) {
             memo = Memo.text(batch.memo);
-        } else {
+        } else if (this.appIndex) {
             invoiceList = new commonpb.InvoiceList();
             for (const r of batch.earns) {
                 if (r.invoice) {
@@ -364,18 +369,20 @@ export class Client {
                 }
             }
 
+            let fk = Buffer.alloc(29);
             if (invoiceList.getInvoicesList().length > 0) {
                 if (invoiceList.getInvoicesList().length != batch.earns.length) {
                     throw new Error("either all or none of the earns should have an invoice");
                 }
 
                 const serialized = invoiceList.serializeBinary();
-                const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex")
-                const kinMemo = KinMemo.new(1, TransactionType.Earn, this.appIndex!, buf)
-                memo = new Memo(MemoHash, kinMemo.buffer);
+                fk = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex")
             } else {
                 invoiceList = undefined;
             }
+
+            const kinMemo = KinMemo.new(1, TransactionType.Earn, this.appIndex!, fk)
+            memo = new Memo(MemoHash, kinMemo.buffer);
         }
 
         const result = await this.signAndSubmit(signers, ops, memo, invoiceList);

@@ -211,7 +211,11 @@ test("submit payment", async() => {
             const actual = Memo.fromXdr(request!.envelope.v0().tx().memo(), true);
             expect(actual?.buffer).toStrictEqual(expected.buffer);
         } else {
-            expect(request!.envelope.v0().tx().memo().switch()).toBe(xdr.MemoType.memoNone());
+            expect(request!.envelope.v0().tx().memo().switch()).toBe(xdr.MemoType.memoHash());
+
+            const expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
+            const actual = Memo.fromXdr(request!.envelope.v0().tx().memo(), true);
+            expect(actual?.buffer).toStrictEqual(expected.buffer);
         }
     }
 
@@ -443,7 +447,10 @@ test("submit earn batch", async() => {
                 const expected = Memo.new(1, TransactionType.Earn, 1, buf);
                 expect(tx.memo().hash()).toStrictEqual(expected.buffer);
             } else {
-                expect(tx.memo().switch()).toBe(xdr.MemoType.memoNone());
+                // since we have an app index configured, we still expect a memo
+                const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
+                expect(tx.memo().switch()).toBe(xdr.MemoType.memoHash());
+                expect(tx.memo().hash()).toStrictEqual(expected.buffer);
             }
 
             for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
