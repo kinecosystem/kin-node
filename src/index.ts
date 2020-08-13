@@ -195,7 +195,7 @@ export interface EarnBatch {
     earns: Earn[]
 }
 
-// EarnReceiver represents a receiver in an earn batch.
+// Earn represents a earn payment in an earn batch.
 export interface Earn {
     destination: PublicKey
     quarks:      BigNumber
@@ -217,6 +217,6 @@ export class EarnBatchResult {
 // EarnResult contains the result of a submitted earn.
 export interface EarnResult {
     txHash?:  Buffer
-    receiver: Earn
+    earn: Earn
     error?:   Error
 }

@@ -9,12 +9,12 @@ import commonpb from "agora-api/node/common/v3/model_pb";
 
 import { InternalClient, SubmitStellarTransactionResult } from "../../src/client";
 import { AccountExists, AccountDoesNotExist, TransactionErrors, SkuNotFound, AlreadyPaid, WrongDestination, InvalidSignature, InsufficientBalance, InsufficientFee, TransactionFailed } from "../../src/errors";
-import { 
-    Client, 
+import {
+    Client,
     Memo,
     Earn,
     EarnBatch,
-    PrivateKey, 
+    PrivateKey,
     PublicKey,
     Payment,
     TransactionType,
@@ -184,7 +184,7 @@ test("submit payment", async() => {
         },
     ];
 
-    const client = new Client(Environment.Test, {
+    let client = new Client(Environment.Test, {
         appIndex: 1,
         internal: instance(internal),
     });
@@ -195,8 +195,10 @@ test("submit payment", async() => {
 
         if (p.source) {
             expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(source.kp.rawPublicKey());
+            expect(request!.envelope.v0().signatures()).toHaveLength(2);
         } else {
             expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+            expect(request!.envelope.v0().signatures()).toHaveLength(1);
         }
 
         if (p.memo) {
@@ -210,6 +212,25 @@ test("submit payment", async() => {
             expect(actual?.buffer).toStrictEqual(expected.buffer);
         } else {
             expect(request!.envelope.v0().tx().memo().switch()).toBe(xdr.MemoType.memoNone());
+        }
+    }
+
+    client = new Client(Environment.Test, {
+        appIndex: 1,
+        whitelistKey: new PrivateKey(Keypair.random()),
+        internal: instance(internal),
+    });
+    for (const p of payments) {
+        const resp = await client.submitPayment(p);
+        expect(request).toBeDefined();
+        expect(request!.envelope.v0().tx().seqNum().low).toBe(1);
+
+        if (p.source) {
+            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(source.kp.rawPublicKey());
+            expect(request!.envelope.v0().signatures()).toHaveLength(3);
+        } else {
+            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+            expect(request!.envelope.v0().signatures()).toHaveLength(2);
         }
     }
 })
@@ -325,18 +346,18 @@ test("submit earn batch", async() => {
     const sender = new PrivateKey(Keypair.random());
     const source = new PrivateKey(Keypair.random());
 
-    const receivers = new Array<Earn>();
+    const earns = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
         const dest = new PrivateKey(Keypair.random());
-        receivers.push({
+        earns.push({
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
         });
     }
-    const invoiceReceivers = new Array<Earn>();
+    const invoiceEarns = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
         const dest = new PrivateKey(Keypair.random());
-        invoiceReceivers.push({
+        invoiceEarns.push({
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
             invoice: {
@@ -353,16 +374,16 @@ test("submit earn batch", async() => {
     const batches: EarnBatch[] = [
         {
             sender: sender,
-            earns: receivers,
+            earns: earns,
         },
         {
             sender: sender,
             source: source,
-            earns: receivers,
+            earns: earns,
         },
         {
             sender: sender,
-            earns: invoiceReceivers,
+            earns: invoiceEarns,
         },
     ];
 
@@ -484,10 +505,10 @@ test("submit earn batch failures", async() => {
     }
 
     // ensure partial failures are handled
-    const receivers = new Array<Earn>();
+    const earns = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
         const dest = new PrivateKey(Keypair.random());
-        receivers.push({
+        earns.push({
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
         });
@@ -521,7 +542,7 @@ test("submit earn batch failures", async() => {
     };
     let result = await client.submitEarnBatch({
         sender: sender,
-        earns: receivers,
+        earns: earns,
     });
     expect(result.succeeded).toHaveLength(100);
     expect(result.failed).toHaveLength(102);
@@ -539,7 +560,7 @@ test("submit earn batch failures", async() => {
     }
     result = await client.submitEarnBatch({
         sender: sender,
-        earns: receivers,
+        earns: earns,
     });
     expect(result.succeeded).toHaveLength(100);
     expect(result.failed).toHaveLength(102);

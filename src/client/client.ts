@@ -1,13 +1,13 @@
 import hash from "hash.js";
 import BigNumber from "bignumber.js";
-import { 
-    TransactionBuilder, 
-    Memo, 
-    MemoHash, 
-    xdr, 
-    Account, 
-    Operation, 
-    Asset 
+import {
+    TransactionBuilder,
+    Memo,
+    MemoHash,
+    xdr,
+    Account,
+    Operation,
+    Asset
 } from "stellar-base";
 
 import commonpb from "agora-api/node/common/v3/model_pb";
@@ -15,10 +15,10 @@ import accountgrpc from "agora-api/node/account/v3/account_service_grpc_pb";
 import transactionpb from "agora-api/node/transaction/v3/transaction_service_pb";
 import transactiongrpc from "agora-api/node/transaction/v3/transaction_service_grpc_pb";
 
-import { 
-    PrivateKey, 
-    PublicKey, 
-    Memo as KinMemo, 
+import {
+    PrivateKey,
+    PublicKey,
+    Memo as KinMemo,
     TransactionType,
     NetworkPasshrase,
 } from "../";
@@ -36,6 +36,9 @@ export interface ClientConfig {
 
     appIndex?: number
     retryConfig?: RetryConfig
+
+    // An optional whitelist key to sign every transaction with.
+    whitelistKey?: PrivateKey
 }
 
 export interface RetryConfig {
@@ -61,6 +64,7 @@ export class Client {
     networkPassphrase: string
     maxNonceRetries:   number
     appIndex?:         number
+    whitelistKey?:     PrivateKey
 
     constructor(env: Environment, conf?: ClientConfig) {
         let defaultEndpoint: string;
@@ -79,6 +83,7 @@ export class Client {
 
         if (conf) {
             this.appIndex = conf.appIndex;
+            this.whitelistKey = conf.whitelistKey;
         }
         if (conf?.retryConfig?.maxNonceRefreshes) {
             this.maxNonceRetries = conf?.retryConfig?.maxNonceRefreshes;
@@ -103,7 +108,7 @@ export class Client {
             internalConf.endpoint = defaultEndpoint;
         }
 
-        
+
         let retryConfig: RetryConfig = Object.assign({}, defaultRetryConfig);
         if (conf && conf.retryConfig) {
             retryConfig = conf.retryConfig!;
@@ -176,7 +181,7 @@ export class Client {
         const op = Operation.payment({
             destination: payment.destination.stellarAddress(),
             asset: Asset.native(),
-            // In Kin, the base currency has been 'scaled' by 
+            // In Kin, the base currency has been 'scaled' by
             // a factor of 100 from stellar. That is, 1 Kin is 100x
             // 1 XLM, and the minimum amount is 1e-5 instead of 1e-7.
             //
@@ -221,7 +226,7 @@ export class Client {
     //
     // Depending on the size of the EarnBatch, the client may break up
     // the batch into multiple sub-batches. As a result, it is possible
-    // for partial failures to occur. 
+    // for partial failures to occur.
     //
     // If partial failures cannot be tolerated, then submitPayment with type Earn,
     // or submitBatch with a batch size of 1 should be used.
@@ -238,7 +243,7 @@ export class Client {
                     throw new Error("cannot submit earn batch without an app index");
                 }
                 if ((batch.earns[i].invoice == undefined) != (batch.earns[i+1].invoice == undefined)) {
-                    throw new Error("either all or none of the receivers should have an invoice set");
+                    throw new Error("either all or none of the earns should have an invoice set");
                 }i
             }
 
@@ -279,7 +284,7 @@ export class Client {
                 for (const r of b.earns) {
                     batchResult.succeeded.push({
                         txHash: result.TxHash,
-                        receiver: r,
+                        earn: r,
                     });
                 }
 
@@ -296,7 +301,7 @@ export class Client {
                 for (let j = 0; j < result.Errors.OpErrors.length; j++) {
                     batchResult.failed.push({
                         txHash: result.TxHash,
-                        receiver: b.earns[j],
+                        earn: b.earns[j],
                         error: result.Errors.OpErrors[j],
                     });
                 }
@@ -314,7 +319,7 @@ export class Client {
         for (let i = unprocessedBatch; i < batches.length; i++) {
             for (const r of batches[i].earns) {
                 batchResult.failed.push({
-                    receiver: r,
+                    earn: r,
                 })
             }
         }
@@ -336,7 +341,7 @@ export class Client {
             ops.push(Operation.payment({
                 destination: r.destination.stellarAddress(),
                 asset: Asset.native(),
-                // In Kin, the base currency has been 'scaled' by 
+                // In Kin, the base currency has been 'scaled' by
                 // a factor of 100 from stellar. That is, 1 Kin is 100x
                 // 1 XLM, and the minimum amount is 1e-5 instead of 1e-7.
                 //
@@ -361,7 +366,7 @@ export class Client {
 
             if (invoiceList.getInvoicesList().length > 0) {
                 if (invoiceList.getInvoicesList().length != batch.earns.length) {
-                    throw new Error("either all or none of the receivers should have an invoice");
+                    throw new Error("either all or none of the earns should have an invoice");
                 }
 
                 const serialized = invoiceList.serializeBinary();
@@ -403,6 +408,10 @@ export class Client {
 
             const tx = builder.build();
             tx.sign(...signers.map(s => s.kp));
+
+            if (this.whitelistKey) {
+                tx.sign(this.whitelistKey.kp);
+            }
 
             result = await this.internal.submitStellarTransaction(tx.toEnvelope(), invoiceList);
             if (result.Errors && result.Errors.TxError instanceof BadNonce) {
