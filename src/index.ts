@@ -192,11 +192,11 @@ export interface EarnBatch {
 
     memo?: string
 
-    receivers: EarnReceiver[]
+    earns: Earn[]
 }
 
 // EarnReceiver represents a receiver in an earn batch.
-export interface EarnReceiver {
+export interface Earn {
     destination: PublicKey
     quarks:      BigNumber
     invoice?:    Invoice
@@ -217,6 +217,6 @@ export class EarnBatchResult {
 // EarnResult contains the result of a submitted earn.
 export interface EarnResult {
     txHash?:  Buffer
-    receiver: EarnReceiver
+    receiver: Earn
     error?:   Error
 }

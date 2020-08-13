@@ -12,7 +12,7 @@ import { AccountExists, AccountDoesNotExist, TransactionErrors, SkuNotFound, Alr
 import { 
     Client, 
     Memo,
-    EarnReceiver,
+    Earn,
     EarnBatch,
     PrivateKey, 
     PublicKey,
@@ -325,7 +325,7 @@ test("submit earn batch", async() => {
     const sender = new PrivateKey(Keypair.random());
     const source = new PrivateKey(Keypair.random());
 
-    const receivers = new Array<EarnReceiver>();
+    const receivers = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
         const dest = new PrivateKey(Keypair.random());
         receivers.push({
@@ -333,7 +333,7 @@ test("submit earn batch", async() => {
             quarks: new BigNumber(1 + i),
         });
     }
-    const invoiceReceivers = new Array<EarnReceiver>();
+    const invoiceReceivers = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
         const dest = new PrivateKey(Keypair.random());
         invoiceReceivers.push({
@@ -353,16 +353,16 @@ test("submit earn batch", async() => {
     const batches: EarnBatch[] = [
         {
             sender: sender,
-            receivers: receivers,
+            earns: receivers,
         },
         {
             sender: sender,
             source: source,
-            receivers: receivers,
+            earns: receivers,
         },
         {
             sender: sender,
-            receivers: invoiceReceivers,
+            earns: invoiceReceivers,
         },
     ];
 
@@ -405,7 +405,7 @@ test("submit earn batch", async() => {
             const req = requests[reqId];
             const tx = req.envelope.v0().tx();
 
-            expect(tx.operations()).toHaveLength(Math.min(100, b.receivers.length - reqId*100));
+            expect(tx.operations()).toHaveLength(Math.min(100, b.earns.length - reqId*100));
             expect(tx.seqNum().low).toBe(reqId+1);
 
             if (b.source) {
@@ -416,7 +416,7 @@ test("submit earn batch", async() => {
 
             if (b.memo) {
                 expect(b.memo).toBe(tx.memo().text().toString())
-            } else if (b.receivers[0].invoice) {
+            } else if (b.earns[0].invoice) {
                 const serialized = req.invoice!.serializeBinary();
                 const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex")
                 const expected = Memo.new(1, TransactionType.Earn, 1, buf);
@@ -428,7 +428,7 @@ test("submit earn batch", async() => {
             for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
                 const op = tx.operations()[opIndex];
                 expect(op.body().paymentOp().amount().low).toBe((reqId * 100 + opIndex + 1));
-                expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.receivers[reqId * 100 + opIndex].destination.buffer);
+                expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[reqId * 100 + opIndex].destination.buffer);
             }
         }
     }
@@ -441,7 +441,7 @@ test("submit earn batch failures", async() => {
     const sender = new PrivateKey(Keypair.random());
     const badBatch: EarnBatch = {
         sender: sender,
-        receivers: [
+        earns: [
             {
                 destination: new PrivateKey(Keypair.random()).publicKey(),
                 quarks: new BigNumber(10),
@@ -467,7 +467,7 @@ test("submit earn batch failures", async() => {
         expect((<Error>err).message).toContain("without an app index");
     }
 
-    badBatch.receivers.push({
+    badBatch.earns.push({
         destination: new PrivateKey(Keypair.random()).publicKey(),
         quarks: new BigNumber(10),
     });
@@ -484,7 +484,7 @@ test("submit earn batch failures", async() => {
     }
 
     // ensure partial failures are handled
-    const receivers = new Array<EarnReceiver>();
+    const receivers = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
         const dest = new PrivateKey(Keypair.random());
         receivers.push({
@@ -521,7 +521,7 @@ test("submit earn batch failures", async() => {
     };
     let result = await client.submitEarnBatch({
         sender: sender,
-        receivers: receivers,
+        earns: receivers,
     });
     expect(result.succeeded).toHaveLength(100);
     expect(result.failed).toHaveLength(102);
@@ -539,7 +539,7 @@ test("submit earn batch failures", async() => {
     }
     result = await client.submitEarnBatch({
         sender: sender,
-        receivers: receivers,
+        earns: receivers,
     });
     expect(result.succeeded).toHaveLength(100);
     expect(result.failed).toHaveLength(102);

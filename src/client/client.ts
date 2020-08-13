@@ -227,22 +227,22 @@ export class Client {
     // or submitBatch with a batch size of 1 should be used.
     async submitEarnBatch(batch: EarnBatch): Promise<EarnBatchResult> {
         if (batch.memo) {
-            for (const r of batch.receivers) {
+            for (const r of batch.earns) {
                 if (r.invoice) {
                     throw new Error("cannot have invoice set when memo is set");
                 }
             }
         } else {
-            for (let i = 0; i < batch.receivers.length - 1; i++) {
-                if (batch.receivers[i].invoice && !this.appIndex) {
+            for (let i = 0; i < batch.earns.length - 1; i++) {
+                if (batch.earns[i].invoice && !this.appIndex) {
                     throw new Error("cannot submit earn batch without an app index");
                 }
-                if ((batch.receivers[i].invoice == undefined) != (batch.receivers[i+1].invoice == undefined)) {
+                if ((batch.earns[i].invoice == undefined) != (batch.earns[i+1].invoice == undefined)) {
                     throw new Error("either all or none of the receivers should have an invoice set");
                 }i
             }
 
-            if (batch.receivers[batch.receivers.length - 1].invoice && !this.appIndex) {
+            if (batch.earns[batch.earns.length - 1].invoice && !this.appIndex) {
                 throw new Error("cannot submit earn batch without an app index");
             }
         }
@@ -250,13 +250,13 @@ export class Client {
         // Stellar has an operation batch size of 100, so we break apart the EarnBatch into
         // sub-batches of 100 each.
         const batches: EarnBatch[] = [];
-        for (let start = 0; start < batch.receivers.length; start += 100) {
-            const end = Math.min(start+100, batch.receivers.length);
+        for (let start = 0; start < batch.earns.length; start += 100) {
+            const end = Math.min(start+100, batch.earns.length);
             batches.push({
                 sender: batch.sender,
                 source: batch.source,
                 memo: batch.memo,
-                receivers: batch.receivers.slice(start, end),
+                earns: batch.earns.slice(start, end),
             });
         }
 
@@ -276,7 +276,7 @@ export class Client {
             }
 
             if (!result.Errors || !result.Errors.TxError) {
-                for (const r of b.receivers) {
+                for (const r of b.earns) {
                     batchResult.succeeded.push({
                         txHash: result.TxHash,
                         receiver: r,
@@ -296,7 +296,7 @@ export class Client {
                 for (let j = 0; j < result.Errors.OpErrors.length; j++) {
                     batchResult.failed.push({
                         txHash: result.TxHash,
-                        receiver: b.receivers[j],
+                        receiver: b.earns[j],
                         error: result.Errors.OpErrors[j],
                     });
                 }
@@ -312,7 +312,7 @@ export class Client {
         }
 
         for (let i = unprocessedBatch; i < batches.length; i++) {
-            for (const r of batches[i].receivers) {
+            for (const r of batches[i].earns) {
                 batchResult.failed.push({
                     receiver: r,
                 })
@@ -332,7 +332,7 @@ export class Client {
         }
 
         const ops: xdr.Operation[] = [];
-        for (const r of batch.receivers) {
+        for (const r of batch.earns) {
             ops.push(Operation.payment({
                 destination: r.destination.stellarAddress(),
                 asset: Asset.native(),
@@ -353,14 +353,14 @@ export class Client {
             memo = Memo.text(batch.memo);
         } else {
             invoiceList = new commonpb.InvoiceList();
-            for (const r of batch.receivers) {
+            for (const r of batch.earns) {
                 if (r.invoice) {
                     invoiceList.addInvoices(invoiceToProto(r.invoice));
                 }
             }
 
             if (invoiceList.getInvoicesList().length > 0) {
-                if (invoiceList.getInvoicesList().length != batch.receivers.length) {
+                if (invoiceList.getInvoicesList().length != batch.earns.length) {
                     throw new Error("either all or none of the receivers should have an invoice");
                 }
 
