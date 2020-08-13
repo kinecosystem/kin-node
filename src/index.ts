@@ -38,6 +38,10 @@ export function kinToQuarks(amount: BigNumber | string): BigNumber {
     return new BigNumber(amount).multipliedBy(1e5);
 }
 
+export function quarksToKin(amount: BigNumber | string): BigNumber {
+    return new BigNumber(amount).dividedBy(1e5);
+}
+
 export function xdrInt64ToBigNumber(i64: xdr.Int64): BigNumber {
     const amount = BigNumber.sum(
         new BigNumber(i64.high).multipliedBy(Math.pow(2, 32)),
