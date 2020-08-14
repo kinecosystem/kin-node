@@ -242,17 +242,14 @@ export class Client {
                 }
             }
         } else {
-            for (let i = 0; i < batch.earns.length - 1; i++) {
-                if (batch.earns[i].invoice && !this.appIndex) {
-                    throw new Error("cannot submit earn batch without an app index");
-                }
-                if ((batch.earns[i].invoice == undefined) != (batch.earns[i+1].invoice == undefined)) {
-                    throw new Error("either all or none of the earns should have an invoice set");
-                }i
+            if (batch.earns[0].invoice && !this.appIndex) {
+                throw new Error("cannot submit earn batch without an app index");
             }
 
-            if (batch.earns[batch.earns.length - 1].invoice && !this.appIndex) {
-                throw new Error("cannot submit earn batch without an app index");
+            for (let i = 0; i < batch.earns.length - 1; i++) {
+                if ((batch.earns[i].invoice == undefined) != (batch.earns[i+1].invoice == undefined)) {
+                    throw new Error("either all or none of the earns should have an invoice set");
+                }
             }
         }
 
@@ -300,7 +297,7 @@ export class Client {
             lastError = result.Errors.TxError;
 
             // If there was operation level errors, we set the individual results
-            // for this batch, and then mark the next batch as aborted.
+            // for this batch, and then mark the rest of the earns as aborted.
             if (result.Errors.OpErrors) {
                 for (let j = 0; j < result.Errors.OpErrors.length; j++) {
                     batchResult.failed.push({
