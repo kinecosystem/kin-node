@@ -78,7 +78,7 @@ export class Client {
                 defaultEndpoint = "api.agorainfra.net:443";
                 break;
             default:
-                throw new Error("unsupport env:" + env);
+                throw new Error("unsupported env:" + env);
         }
 
         if (conf) {
@@ -117,7 +117,6 @@ export class Client {
             limit(retryConfig.maxRetries),
             backoffWithJitter(binaryExpotentialDelay(retryConfig.minDelaySeconds), retryConfig.maxDelaySeconds, 0.1),
         ];
-
 
         this.internal = new InternalClient(internalConf);
     }
@@ -342,9 +341,9 @@ export class Client {
         }
 
         const ops: xdr.Operation[] = [];
-        for (const r of batch.earns) {
+        for (const e of batch.earns) {
             ops.push(Operation.payment({
-                destination: r.destination.stellarAddress(),
+                destination: e.destination.stellarAddress(),
                 asset: Asset.native(),
                 // In Kin, the base currency has been 'scaled' by
                 // a factor of 100 from stellar. That is, 1 Kin is 100x
@@ -353,7 +352,7 @@ export class Client {
                 // Since js-stellar's amount here is in XLM (equivalent to Kin),
                 // we need to convert it to a quark (divide by 1e5), and then also
                 // account for the 100x scaling factor. 1e5 / 100 = 1e7.
-                amount: r.quarks.dividedBy(1e7).toFixed(7),
+                amount: e.quarks.dividedBy(1e7).toFixed(7),
             }));
         }
 

@@ -3,20 +3,20 @@ import request from "supertest";
 import { hmac, sha256 } from "hash.js";
 import { Keypair, xdr, TransactionBuilder } from "stellar-base";
 
-import { 
-    Event, 
-    EventsHandler, 
-    SignTransactionRequest, 
-    SignTransactionResponse, 
-    SignTransactionHandler, 
-    AGORA_HMAC_HEADER, 
-    AGORA_USER_ID_HEADER, 
-    AGORA_USER_PASSKEY_HEADER, 
-    InvoiceError, 
+import {
+    Event,
+    EventsHandler,
+    SignTransactionRequest,
+    SignTransactionResponse,
+    SignTransactionHandler,
+    AGORA_HMAC_HEADER,
+    AGORA_USER_ID_HEADER,
+    AGORA_USER_PASSKEY_HEADER,
+    InvoiceError,
     RejectionReason,
 } from "../../src/webhook";
-import { 
-    Environment, 
+import {
+    Environment,
     NetworkPasshrase,
     PrivateKey,
  } from "../../src";
@@ -36,7 +36,7 @@ function getHmacHeader(body: any): string {
     return Buffer.from(hex, "hex").toString("base64");
 }
 
-test("missing invalid webhook secret", async () => {
+test("hmac header validation", async () => {
     await request(app)
         .post("/events")
         .set('Accept', 'application/json')
@@ -106,18 +106,18 @@ test("invalid requests", async () => {
         .send(garbage)
         .expect(400);
 
-    const garbageEnvelopes = {
+    const garbageEnvelope = {
         envelope_xdr: "notproperbase64",
     }
     await request(app)
         .post("/sign_transaction")
         .set('Accept', 'application/json')
-        .set(AGORA_HMAC_HEADER, getHmacHeader(garbageEnvelopes))
-        .send(garbageEnvelopes)
+        .set(AGORA_HMAC_HEADER, getHmacHeader(garbageEnvelope))
+        .send(garbageEnvelope)
         .expect(400);
 })
 
-test("events", async () => {
+test("eventsHandler", async () => {
     const app = express();
     let received = new Array<Event>();
 
@@ -149,7 +149,7 @@ test("events", async () => {
     expect(received).toStrictEqual(sent);
 })
 
-test("submit transaction", async () => {
+test("signtransactionHandler", async () => {
     const app = express();
     const serverKeypair = new PrivateKey(Keypair.random());
     const localKeypair = new PrivateKey(Keypair.random());
@@ -204,9 +204,8 @@ test("submit transaction", async () => {
     expect(actualUserPasskey).toBe("user_pass_key");
 })
 
-test("submit transaction rejection", async () => {
+test("signTransactionHandler rejection", async () => {
     const app = express();
-    const serverKeypair = new PrivateKey(Keypair.random());
     const localKeypair = new PrivateKey(Keypair.random());
 
     interface signResponse {

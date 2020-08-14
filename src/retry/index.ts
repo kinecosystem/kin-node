@@ -74,8 +74,8 @@ export function backoffWithJitter(fn: DelayFunction, maxDelaySeconds: number, ji
         const delay = Math.min(fn(attempt), maxDelaySeconds);
 
         // Center the jitter around the capped delay:
-		//     <------cappedDelay------>
-		//      jitter           jitter
+        //     <------cappedDelay------>
+        //      jitter           jitter
         const delayWithJitter = delay * (1 + Math.random() * jitter*2 - jitter);
         return new Promise(resolve => setTimeout(resolve, delayWithJitter * 1000))
             .then(() => true);

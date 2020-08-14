@@ -12,15 +12,15 @@ import transactiongrpc from "agora-api/node/transaction/v3/transaction_service_g
 import { InternalClient } from "../../src/client";
 import { Keypair, xdr } from "stellar-base";
 import { AccountExists, InvalidSignature, TransactionRejected } from "../../src/errors";
-import { 
-    PrivateKey, 
+import {
+    PrivateKey,
     PublicKey,
     ReadOnlyPayment,
     InvoiceItem,
     invoiceToProto,
  } from "../../src";
 
-test('getBlockchainVersion', async () => {
+test('getBlockchainVersion returns 3', async () => {
     expect(await (new InternalClient({}).getBlockchainVersion())).toBe(3);
 })
 
@@ -77,7 +77,7 @@ test('getTransaction', async () => {
             }[],
         },
         response: string
-    }[] = JSON.parse((await fs.readFile("tests/data/get_transaction_test.json")).toString());
+    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_test.json")).toString());
 
     const accountClient = mock(accountgrpc.AccountClient)
     const txClient = mock(transactiongrpc.TransactionClient)
@@ -354,7 +354,7 @@ test('internal retry', async() => {
         expect(err).toBeDefined();
     }
     verify(accountClient.createAccount(anything(), anything())).times(3);
-    
+
     try {
         await client.getAccountInfo(new PublicKey(Buffer.alloc(32)));
         fail();

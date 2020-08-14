@@ -142,9 +142,9 @@ export function paymentsFromEnvelope(envelope: xdr.TransactionEnvelope, type: Tr
 
     envelope.v0().tx().operations().map((op, i) => {
         // Currently we only support payment operations in this RPC.
-		//
-		// We could potentially expand this to CreateAccount functions,
-		// as well as merge account. However, GetTransaction() is primarily
+        //
+        // We could potentially expand this to CreateAccount functions,
+        // as well as merge account. However, GetTransaction() is primarily
         // only used for payments
         if (op.body().switch() != xdr.OperationType.payment()) {
             return;

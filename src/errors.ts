@@ -3,7 +3,7 @@ import {xdr} from "stellar-base"
 // TransactionErrors contains the error details for a transaction.
 //
 // If TxError is defined, the transaction failed.
-// OpErrors may or may not be set if TxErrors is set. The length of
+// OpErrors may or may not be set if TxErrors is set. If set, the length of
 // OpErrors will match the number of operations in the transaction.
 export class TransactionErrors {
     TxError?:  Error

@@ -66,7 +66,7 @@ test("client account management", async () => {
     expect(await client.getBalance(account.publicKey())).toStrictEqual(new BigNumber(10));
 })
 
-test("app index not set", async() => {
+test("submitPayment app index not set", async() => {
     const internal = mock(InternalClient);
     const client = new Client(Environment.Test, {internal: instance(internal)});
 
@@ -124,7 +124,7 @@ test("app index not set", async() => {
     }
 })
 
-test("submit payment", async() => {
+test("submitPayment", async() => {
     const internal = mock(InternalClient);
 
     when(internal.getAccountInfo(anything()))
@@ -239,7 +239,7 @@ test("submit payment", async() => {
     }
 })
 
-test("submit payment failure", async() => {
+test("submitPayment failure", async() => {
     const internal = mock(InternalClient);
 
     when(internal.getAccountInfo(anything()))
@@ -346,7 +346,7 @@ test("submit payment failure", async() => {
     }
 })
 
-test("submit earn batch", async() => {
+test("submitEarnBatch", async() => {
     const sender = new PrivateKey(Keypair.random());
     const source = new PrivateKey(Keypair.random());
 
@@ -462,7 +462,7 @@ test("submit earn batch", async() => {
     }
 });
 
-test("submit earn batch failures", async() => {
+test("submitEarnBatch failures", async() => {
     const internal = mock(InternalClient);
 
     // ensure top level bad requests are rejected
