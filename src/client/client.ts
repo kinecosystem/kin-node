@@ -280,7 +280,6 @@ export class Client {
 
         const batchResult = new EarnBatchResult();
 
-        let lastError: Error | undefined;
         let unprocessedBatch = 0;
         for (let i = 0; i < batches.length; i++) {
             const b = batches[i];
@@ -289,7 +288,12 @@ export class Client {
             try {
                 result = await this.submitSingleEarnBatch(b);
             } catch (err) {
-                lastError = err;
+                for (let j = 0; j < b.earns.length; j++) {
+                    batchResult.failed.push({
+                        earn: b.earns[j],
+                        error: err,
+                    });
+                }
                 break;
             }
 
@@ -306,7 +310,6 @@ export class Client {
             }
 
             // At this point, we consider the batch failed.
-            lastError = result.Errors.TxError;
 
             // If there was operation level errors, we set the individual results
             // for this batch, and then mark the rest of the earns as aborted.
@@ -318,13 +321,17 @@ export class Client {
                         error: result.Errors.OpErrors[j],
                     });
                 }
+            } else {
+                for (let j = 0; j < b.earns.length; j++) {
+                    batchResult.failed.push({
+                        txHash: result.TxHash,
+                        earn: b.earns[j],
+                        error: result.Errors.TxError,
+                    });
+                }
             }
 
-            if (result.Errors.OpErrors && result.Errors.OpErrors.length > 0) {
-                unprocessedBatch = i + 1;
-            } else {
-                unprocessedBatch = i;
-            }
+            unprocessedBatch = i + 1;
 
             break;
         }
@@ -337,7 +344,6 @@ export class Client {
             }
         }
 
-        batchResult.error = lastError
         return Promise.resolve(batchResult);
     }
 

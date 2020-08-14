@@ -210,7 +210,6 @@ export interface Earn {
 export class EarnBatchResult {
     succeeded: EarnResult[]
     failed:    EarnResult[]
-    error?:    Error
 
     constructor() {
         this.succeeded = [];
@@ -221,6 +220,6 @@ export class EarnBatchResult {
 // EarnResult contains the result of a submitted earn.
 export interface EarnResult {
     txHash?:  Buffer
-    earn: Earn
+    earn:     Earn
     error?:   Error
 }

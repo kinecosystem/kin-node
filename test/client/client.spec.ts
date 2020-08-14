@@ -423,7 +423,6 @@ test("submitEarnBatch", async() => {
         seq = 0;
 
         const result = await client.submitEarnBatch(b);
-        expect(result.error).toBeUndefined();
         expect(requests).toHaveLength(3);
 
         for (let reqId = 0; reqId < requests.length; reqId++) {
@@ -553,7 +552,14 @@ test("submitEarnBatch failures", async() => {
     });
     expect(result.succeeded).toHaveLength(100);
     expect(result.failed).toHaveLength(102);
-    expect(result.error).toBeInstanceOf(InsufficientFee);
+    for (let i = 0; i < 100; i++) {
+        expect(result.failed[i].error).toBeInstanceOf(InsufficientFee);
+        expect(result.failed[i].earn).toBe(earns[100+i]);
+    }
+    for (let i = 100; i < 102; i++) {
+        expect(result.failed[i].error).toBeUndefined();
+        expect(result.failed[i].earn).toBe(earns[100+i]);
+    }
 
     failAfter = 1;
     failWith = {
@@ -571,7 +577,6 @@ test("submitEarnBatch failures", async() => {
     });
     expect(result.succeeded).toHaveLength(100);
     expect(result.failed).toHaveLength(102);
-    expect(result.error).toBeInstanceOf(TransactionFailed);
 
     for (let i = 0; i < result.failed.length; i++) {
         if (i < 100 && i%2 == 0) {
