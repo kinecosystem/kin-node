@@ -67,6 +67,23 @@ export class Client {
     whitelistKey?:     PrivateKey
 
     constructor(env: Environment, conf?: ClientConfig) {
+        if (conf?.endpoint) {
+            if (conf?.internal) {
+                throw new Error("cannot specify both endpoint and internal client");
+            }
+            if (conf?.accountClient || conf?.txClient) {
+                throw new Error("cannot specify both endpoint and gRPC clients");
+            }
+        } else if (conf?.internal) {
+            if (conf?.accountClient || conf?.txClient) {
+                throw new Error("cannot specify both internal and gRPC clients");
+            }
+        } else if (conf?.accountClient) {
+            if (!conf?.txClient) {
+                throw new Error("must specify both gRPC clients");
+            }
+        }
+
         let defaultEndpoint: string;
         switch (env) {
             case Environment.Test:
@@ -100,14 +117,9 @@ export class Client {
             accountClient: conf?.accountClient,
             txClient: conf?.txClient,
         }
-
-        if (internalConf.endpoint && (internalConf.accountClient || internalConf.txClient)) {
-            throw new Error("cannot specify both endpoint and gRPC clients");
-        }
         if (!internalConf.endpoint && !internalConf.accountClient && !internalConf.endpoint) {
             internalConf.endpoint = defaultEndpoint;
         }
-
 
         let retryConfig: RetryConfig = Object.assign({}, defaultRetryConfig);
         if (conf && conf.retryConfig) {
