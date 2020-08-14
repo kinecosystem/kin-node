@@ -41,24 +41,30 @@ export interface InternalClientConfig {
 //
 // The interface is _not_ stable, and should not be used. However,
 // it is exported in case there is some strong reason that access
-// to the underlying blockchain primitives are required. 
+// to the underlying blockchain primitives are required.
 export class Internal {
     txClient: transactiongrpc.TransactionClient
     accountClient: accountgrpc.AccountClient
     strategies: ShouldRetry[]
 
     constructor(config: InternalClientConfig) {
-        if (config.endpoint && (config.accountClient || config.txClient)) {
-            throw new Error("cannot specify endpoint and clients");
-        }
-
         if (config.endpoint) {
+            if (config.accountClient || config.txClient) {
+                throw new Error("cannot specify endpoint and clients");
+            }
+
             const sslCreds = grpc.credentials.createSsl();
             this.accountClient = new accountgrpc.AccountClient(config.endpoint, sslCreds);
             this.txClient = new transactiongrpc.TransactionClient(config.endpoint, sslCreds);
-        } else {
+        } else if (config.accountClient) {
+            if (!config.accountClient) {
+                throw new Error("must specify both gRPC clients");
+            }
+
             this.accountClient = config.accountClient!;
             this.txClient = config.txClient!;
+        } else {
+            throw new Error("must specify endpoint or gRPC clients");
         }
 
         if (config.strategies) {

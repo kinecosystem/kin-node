@@ -21,7 +21,13 @@ import {
  } from "../../src";
 
 test('getBlockchainVersion returns 3', async () => {
-    expect(await (new InternalClient({}).getBlockchainVersion())).toBe(3);
+    const accountClient = mock(accountgrpc.AccountClient);
+    const txClient = mock(transactiongrpc.TransactionClient)
+    const client = new InternalClient({
+        accountClient: instance(accountClient),
+        txClient: instance(txClient),
+    })
+    expect(await client.getBlockchainVersion()).toBe(3);
 })
 
 test('createStellarAccount', async () => {
