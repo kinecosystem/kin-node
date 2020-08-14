@@ -190,7 +190,7 @@ export class Client {
                 fk = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex")
             }
 
-            const kinMemo = KinMemo.new(1, TransactionType.Spend, this.appIndex!, fk)
+            const kinMemo = KinMemo.new(1, payment.type, this.appIndex!, fk)
             memo = new Memo(MemoHash, kinMemo.buffer);
         }
 
