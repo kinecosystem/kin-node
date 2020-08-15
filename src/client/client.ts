@@ -78,10 +78,8 @@ export class Client {
             if (conf?.accountClient || conf?.txClient) {
                 throw new Error("cannot specify both internal and gRPC clients");
             }
-        } else if (conf?.accountClient) {
-            if (!conf?.txClient) {
-                throw new Error("must specify both gRPC clients");
-            }
+        } else if ((conf?.accountClient == undefined) !=  (conf?.txClient == undefined)) {
+            throw new Error("either both or neither gRPC clients must be set");
         }
 
         let defaultEndpoint: string;
