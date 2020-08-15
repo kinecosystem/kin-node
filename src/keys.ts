@@ -1,4 +1,5 @@
 import {StrKey, Keypair} from "stellar-base"
+import base58 from "bs58";
 
 // PublicKey is a blockchain agnostic representation
 // of an ed25519 public key.
@@ -30,7 +31,7 @@ export class PublicKey {
     }
 }
 
-// PrivateKey is a blockchain agnostic representation of an 
+// PrivateKey is a blockchain agnostic representation of an
 // ed25519 public key.
 export class PrivateKey {
     kp: Keypair
@@ -39,16 +40,17 @@ export class PrivateKey {
         this.kp = kp;
     }
 
-    static fromString(seed: string): PrivateKey {
-        if (seed.length != 56) {
-            throw new Error("seed format not supported");
-        }
+    static random(): PrivateKey {
+        return new PrivateKey(Keypair.random());
+    }
 
-        if (seed[0] == "S") {
+    static fromString(seed: string): PrivateKey {
+        if (seed[0] == "S" && seed.length == 56) {
             return new PrivateKey(Keypair.fromSecret(seed));
         }
 
-        throw new Error("input is not a seed");
+        // attempt to parse
+        return new PrivateKey(Keypair.fromRawEd25519Seed(Buffer.from(seed, "hex")));
     }
 
     publicKey(): PublicKey {

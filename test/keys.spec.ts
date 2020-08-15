@@ -13,3 +13,24 @@ test("stellar_keys", () => {
     expect(privKey.stellarSeed()).toBe(priv);
     expect(privKey.publicKey().stellarAddress()).toBe(pub);
 })
+
+test("invalid stellar keys", () => {
+    const invalidPulicKeys = [
+        "",
+        "G",
+        "GCABWU4FHL3RGOIWCX5TOVLIAMLEU",
+        "GCABWU4FHL3RGOIWCX5TOVLIAMLEU2YXXLCMHVXLDOFHKLNLGCSBRJYPXXXXXXXXXXXXXXXX",
+    ];
+    for (const k of invalidPulicKeys) {
+        expect(() => { PublicKey.fromString(k) }).toThrow();
+    }
+
+    const invalidPrivateKeys = [
+        "",
+        "SCZ4KGTCMAFIJQCCJDMMKD",
+        "SCZ4KGTCMAFIJQCCJDMMKDFUB7NYV56VBNEU7BKMR4PQFUETJCWLV6GNXXXXXXX",
+    ];
+    for (const k of invalidPrivateKeys) {
+        expect(() => { PrivateKey.fromString(k) }).toThrow();
+    }
+})
