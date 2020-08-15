@@ -44,8 +44,8 @@ app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: Sign
         if (p.invoice) {
             for (let item of p.invoice.Items) {
                 if (!item.sku) {
-                    // Note: in general the sku is optional. Howver, in this example we
-                    //       mark it as SkuNotFound to faciliate testing. 
+                    // Note: in general the sku is optional. However, in this example we
+                    //       mark it as SkuNotFound to facilitate testing.
                     resp.markSkuNotFound(i);
                 }
             }
