@@ -15,13 +15,13 @@ test("stellar_keys", () => {
 })
 
 test("invalid stellar keys", () => {
-    const invalidPulicKeys = [
+    const invalidPublicKeys = [
         "",
         "G",
         "GCABWU4FHL3RGOIWCX5TOVLIAMLEU",
         "GCABWU4FHL3RGOIWCX5TOVLIAMLEU2YXXLCMHVXLDOFHKLNLGCSBRJYPXXXXXXXXXXXXXXXX",
     ];
-    for (const k of invalidPulicKeys) {
+    for (const k of invalidPublicKeys) {
         expect(() => { PublicKey.fromString(k) }).toThrow();
     }
 
