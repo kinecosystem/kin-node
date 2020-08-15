@@ -129,7 +129,7 @@ A few examples for creating an account and different ways of submitting payments
 
 ## Webhook Handlers
 
-The SDK offers handler functions to assist  developers with implementing the [Agora webhooks](ttps://docs.kin.org/how-it-works#webhooks).
+The SDK offers handler functions to assist  developers with implementing the [Agora webhooks](https://docs.kin.org/how-it-works#webhooks).
 
 Only apps that have been assigned an [app index](https://docs.kin.org/app-registration) can make use of Agora webhooks.
 
