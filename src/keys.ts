@@ -31,7 +31,7 @@ export class PublicKey {
 }
 
 // PrivateKey is a blockchain agnostic representation of an
-// ed25519 public key.
+// ed25519 private key.
 export class PrivateKey {
     kp: Keypair
 
