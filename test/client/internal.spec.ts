@@ -31,7 +31,7 @@ test('getBlockchainVersion returns 3', async () => {
 })
 
 test('createStellarAccount', async () => {
-    const account = new PrivateKey(Keypair.random());
+    const account = PrivateKey.random();
     const accountClient = mock(accountgrpc.AccountClient)
     const txClient = mock(transactiongrpc.TransactionClient)
 
@@ -310,7 +310,7 @@ test('submitStellarTransaction invoice error', async() => {
 })
 
 test('internal retry', async() => {
-    const account = new PrivateKey(Keypair.random());
+    const account = PrivateKey.random();
     const accountClient = mock(accountgrpc.AccountClient)
     const txClient = mock(transactiongrpc.TransactionClient)
 

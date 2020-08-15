@@ -1,6 +1,6 @@
 import hash from "hash.js";
 import BigNumber from "bignumber.js";
-import { Keypair, xdr } from "stellar-base";
+import { xdr } from "stellar-base";
 import { mock, instance, when, anything } from "ts-mockito";
 
 import transactionpb from "agora-api/node/transaction/v3/transaction_service_pb";
@@ -48,7 +48,7 @@ test("client account management", async () => {
         });
 
 
-    const account = new PrivateKey(Keypair.random());
+    const account = PrivateKey.random();
     const client = new Client(Environment.Test, {
         appIndex: 0,
         internal: instance(internal),
@@ -79,8 +79,8 @@ test("submitPayment app index not set", async() => {
             return Promise.resolve(new SubmitStellarTransactionResult());
         });
 
-    const sender = new PrivateKey(Keypair.random());
-    const dest = new PrivateKey(Keypair.random());
+    const sender = PrivateKey.random();
+    const dest = PrivateKey.random();
     const payments: Payment[] = [
         {
             sender: sender,
@@ -143,9 +143,9 @@ test("submitPayment", async() => {
             return Promise.resolve(new SubmitStellarTransactionResult());
         });
 
-    const sender = new PrivateKey(Keypair.random());
-    const source = new PrivateKey(Keypair.random());
-    const dest = new PrivateKey(Keypair.random());
+    const sender = PrivateKey.random();
+    const source = PrivateKey.random();
+    const dest = PrivateKey.random();
 
     const payments: Payment[] = [
         {
@@ -221,7 +221,7 @@ test("submitPayment", async() => {
 
     client = new Client(Environment.Test, {
         appIndex: 1,
-        whitelistKey: new PrivateKey(Keypair.random()),
+        whitelistKey: PrivateKey.random(),
         internal: instance(internal),
     });
     for (const p of payments) {
@@ -247,8 +247,8 @@ test("submitPayment failure", async() => {
             return Promise.resolve(new accountpb.AccountInfo());
         });
 
-    const sender = new PrivateKey(Keypair.random());
-    const dest = new PrivateKey(Keypair.random());
+    const sender = PrivateKey.random();
+    const dest = PrivateKey.random();
     const payment: Payment = {
         sender: sender,
         destination: dest.publicKey(),
@@ -347,12 +347,12 @@ test("submitPayment failure", async() => {
 })
 
 test("submitEarnBatch", async() => {
-    const sender = new PrivateKey(Keypair.random());
-    const source = new PrivateKey(Keypair.random());
+    const sender = PrivateKey.random();
+    const source = PrivateKey.random();
 
     const earns = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
-        const dest = new PrivateKey(Keypair.random());
+        const dest = PrivateKey.random();
         earns.push({
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
@@ -360,7 +360,7 @@ test("submitEarnBatch", async() => {
     }
     const invoiceEarns = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
-        const dest = new PrivateKey(Keypair.random());
+        const dest = PrivateKey.random();
         invoiceEarns.push({
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
@@ -465,12 +465,12 @@ test("submitEarnBatch failures", async() => {
     const internal = mock(InternalClient);
 
     // ensure top level bad requests are rejected
-    const sender = new PrivateKey(Keypair.random());
+    const sender = PrivateKey.random();
     const badBatch: EarnBatch = {
         sender: sender,
         earns: [
             {
-                destination: new PrivateKey(Keypair.random()).publicKey(),
+                destination: PrivateKey.random().publicKey(),
                 quarks: new BigNumber(10),
                 invoice: {
                     Items: [
@@ -495,7 +495,7 @@ test("submitEarnBatch failures", async() => {
     }
 
     badBatch.earns.push({
-        destination: new PrivateKey(Keypair.random()).publicKey(),
+        destination: PrivateKey.random().publicKey(),
         quarks: new BigNumber(10),
     });
 
@@ -513,7 +513,7 @@ test("submitEarnBatch failures", async() => {
     // ensure partial failures are handled
     const earns = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
-        const dest = new PrivateKey(Keypair.random());
+        const dest = PrivateKey.random();
         earns.push({
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),

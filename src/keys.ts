@@ -1,5 +1,4 @@
 import {StrKey, Keypair} from "stellar-base"
-import base58 from "bs58";
 
 // PublicKey is a blockchain agnostic representation
 // of an ed25519 public key.

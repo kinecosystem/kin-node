@@ -151,8 +151,8 @@ test("eventsHandler", async () => {
 
 test("signtransactionHandler", async () => {
     const app = express();
-    const serverKeypair = new PrivateKey(Keypair.random());
-    const localKeypair = new PrivateKey(Keypair.random());
+    const serverKeypair = PrivateKey.random();
+    const localKeypair = PrivateKey.random();
 
     interface signResponse {
         envelope_xdr: string
@@ -206,7 +206,7 @@ test("signtransactionHandler", async () => {
 
 test("signTransactionHandler rejection", async () => {
     const app = express();
-    const localKeypair = new PrivateKey(Keypair.random());
+    const localKeypair = PrivateKey.random();
 
     interface signResponse {
         envelope_xdr:   string
