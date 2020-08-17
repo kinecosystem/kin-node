@@ -61,7 +61,7 @@ const transactionData = await client.get_transaction(txHash);
 ```
 
 #### Get an Account Balance
-The `getBalance` method gets the balance of the provided account, in quarks
+The `getBalance` method gets the balance of the provided account, in [quarks](https://docs.kin.org/terms-and-concepts#quark)
 ```typescript
 const publicKey = PublicKey.fromAddress("");
 const balance = await client.getBalance(publicKey);
@@ -85,7 +85,7 @@ A `Payment` has the following required properties:
 - `sender`: The private key of the account from which the payment will be sent.
 - `destination`: The public key of the account to which the payment will be sent.
 - `type`: The transaction type of the payment.
-- `quarks`: The amount of the payment, in quarks.
+- `quarks`: The amount of the payment, in [quarks](https://docs.kin.org/terms-and-concepts#quark).
 
 Additionally, it has some optional properties:
 - `source`: The private key of a source account to use for the transaction. If unset, `sender` will be used as the transaction source.
@@ -115,7 +115,7 @@ const result = await client.submitEarnBatch({
 
 A single `Earn` has the following properties:
 - `destination`: The public key of the account to which the earn will be sent.
-- `quarks`: The amount of the earn, in quarks.
+- `quarks`: The amount of the earn, in [quarks](https://docs.kin.org/terms-and-concepts#quark).
 - `invoice`: (optional) An [Invoice](https://docs.kin.org/how-it-works#invoices) to associate with this earn.
 
 The `submitEarnBatch` method has the following parameters:
