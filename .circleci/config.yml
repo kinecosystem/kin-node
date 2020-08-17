@@ -1,0 +1,92 @@
+defaults: &defaults
+  working_directory: ~/repo
+  docker:
+    - image: circleci/node:dubnium # codename for 10.x
+
+whitelist: &whitelist
+  paths:
+    - .npmignore
+    - coverage/*
+    - dist/*
+    - node_modules/*
+    - src/*
+    - test/*
+    - CODE_OF_CONDUCT.md
+    - LICENSE.md
+    - package.json
+    - README.md
+    - tsconfig.json
+    - tslint.json
+
+version: 2
+jobs:
+  checkout:
+    <<: *defaults
+
+    steps:
+      - checkout
+
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{node --version}}-{{ checksum "package.json" }}
+          - v1-dependencies-
+
+      - run:
+          name: npm secret
+          command: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+
+      - run:
+          name: Install Dependencies
+          command: npm install
+
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{node --version}}-{{ checksum "package.json" }}
+
+      - persist_to_workspace:
+          root: ~/repo
+          <<: *whitelist
+
+  test:
+    <<: *defaults
+
+    steps:
+      - attach_workspace:
+          at: ~/repo
+
+      - run:
+          name: Test TypeScript code
+          command: npm run-script test
+
+      - persist_to_workspace:
+          root: ~/repo
+          <<: *whitelist
+
+  build:
+    <<: *defaults
+
+    steps:
+      - attach_workspace:
+          at: ~/repo
+
+      - run:
+          name: Build TypeScript code
+          command: npm run-script build
+
+      - persist_to_workspace:
+          root: ~/repo
+          <<: *whitelist
+
+workflows:
+  version: 2
+
+  build:
+    jobs:
+      - checkout
+      - test:
+          requires:
+            - checkout
+      - build:
+          requires:
+            - test
