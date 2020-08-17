@@ -197,7 +197,7 @@ app.use("/sign_transaction", SignTransactionHandler(req: SignTransactionRequest,
 
 ### Example Code
 
-A simple example Express server implementing both the Events and Sign Transaction webhooks can be found in `examples/webhook/webhook.tx`. To run it, first install all required dependencies (it is recommended that you use a virtual environment):
+A simple example Express server implementing both the Events and Sign Transaction webhooks can be found in `examples/webhook/webhook.tx`. To run it, first install all required dependencies:
 ```
 $ npm i
 or
