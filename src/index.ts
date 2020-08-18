@@ -1,7 +1,7 @@
 import BigNumber from "bignumber.js";
 import { xdr } from "stellar-base";
 
-import commonpb from "agora-api/node/common/v3/model_pb";
+import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 
 import { Client } from "./client";
 import { TransactionErrors } from "./errors";

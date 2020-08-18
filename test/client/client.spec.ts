@@ -3,9 +3,9 @@ import BigNumber from "bignumber.js";
 import { xdr } from "stellar-base";
 import { mock, instance, when, anything } from "ts-mockito";
 
-import transactionpb from "agora-api/node/transaction/v3/transaction_service_pb";
-import accountpb from "agora-api/node/account/v3/account_service_pb";
-import commonpb from "agora-api/node/common/v3/model_pb";
+import transactionpb from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_pb";
+import accountpb from "@kinecosystem/agora-api/node/account/v3/account_service_pb";
+import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 
 import { InternalClient, SubmitStellarTransactionResult } from "../../src/client";
 import { AccountExists, AccountDoesNotExist, TransactionErrors, SkuNotFound, AlreadyPaid, WrongDestination, InvalidSignature, InsufficientBalance, InsufficientFee, TransactionFailed } from "../../src/errors";

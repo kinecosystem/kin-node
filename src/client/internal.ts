@@ -1,9 +1,9 @@
 import grpc from "grpc";
-import commonpb from "agora-api/node/common/v3/model_pb";
-import accountpb from "agora-api/node/account/v3/account_service_pb";
-import accountgrpc from "agora-api/node/account/v3/account_service_grpc_pb";
-import transactionpb from "agora-api/node/transaction/v3/transaction_service_pb";
-import transactiongrpc from "agora-api/node/transaction/v3/transaction_service_grpc_pb";
+import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
+import accountpb from "@kinecosystem/agora-api/node/account/v3/account_service_pb";
+import accountgrpc from "@kinecosystem/agora-api/node/account/v3/account_service_grpc_pb";
+import transactionpb from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_pb";
+import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_grpc_pb";
 
 import { xdr } from "stellar-base";
 

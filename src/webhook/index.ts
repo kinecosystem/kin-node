@@ -3,15 +3,15 @@ import express from "express";
 import { xdr, TransactionBuilder } from "stellar-base";
 import { hmac, sha256 } from "hash.js";
 
-import commonpb, { InvoiceList } from "agora-api/node/common/v3/model_pb";
+import commonpb, { InvoiceList } from "@kinecosystem/agora-api/node/common/v3/model_pb";
 
-import { 
+import {
     PrivateKey,
     TransactionType,
     NetworkPasshrase,
     Environment,
-    ReadOnlyPayment, 
-    paymentsFromEnvelope, 
+    ReadOnlyPayment,
+    paymentsFromEnvelope,
  }  from "..";
 
 
@@ -77,7 +77,7 @@ export class SignTransactionRequest {
     txHash(): Buffer {
         return TransactionBuilder.fromXDR(this.envelope, this.networkPassphrase).hash();
     }
-    
+
 }
 export class SignTransactionResponse {
     rejected: boolean;
@@ -140,7 +140,7 @@ export class InvoiceError {
         this.operation_index = 0;
         this.reason = RejectionReason.None;
     }
-} 
+}
 
 export function SignTransactionHandler(env: Environment, callback: (req: SignTransactionRequest, resp: SignTransactionResponse) => void, secret?: string): express.RequestHandler<any> {
     let networkPassphrase: string
@@ -227,5 +227,5 @@ function verifySignature(headers: http.IncomingHttpHeaders, body: any, secret: s
     const actual = Buffer.from(<string>headers[AGORA_HMAC_HEADER]!, 'base64').toString('hex');
     const expected = hmac(<any>sha256, rawSecret).update(body).digest('hex');
     return actual == expected;
-} 
+}
 

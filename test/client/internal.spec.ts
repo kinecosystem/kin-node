@@ -3,11 +3,11 @@ import { promises as fs } from "fs";
 import { BigNumber } from "bignumber.js";
 import {mock, when, anything, instance, verify} from "ts-mockito";
 
-import accountpb from "agora-api/node/account/v3/account_service_pb";
-import accountgrpc from "agora-api/node/account/v3/account_service_grpc_pb";
-import commonpb from "agora-api/node/common/v3/model_pb";
-import transactionpb from "agora-api/node/transaction/v3/transaction_service_pb";
-import transactiongrpc from "agora-api/node/transaction/v3/transaction_service_grpc_pb";
+import accountpb from "@kinecosystem/agora-api/node/account/v3/account_service_pb";
+import accountgrpc from "@kinecosystem/agora-api/node/account/v3/account_service_grpc_pb";
+import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
+import transactionpb from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_pb";
+import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_grpc_pb";
 
 import { InternalClient } from "../../src/client";
 import { Keypair, xdr } from "stellar-base";
