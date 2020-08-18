@@ -8,11 +8,11 @@ such as creating accounts and sending payments, as well a webhook handler class 
 
 ## Installation
 ```
-npm install @kinecosystem/kin-node
+npm install @kinecosystem/kin-sdk-v2
 ```
 
 ```
-yarn add @kinecosystem/kin-node
+yarn add @kinecosystem/kin-sdk-v2
 ```
 
 ## Overview
