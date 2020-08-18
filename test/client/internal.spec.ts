@@ -1,5 +1,5 @@
 import grpc from "grpc";
-import * as fs from "fs/promises";
+import { promises as fs } from "fs";
 import { BigNumber } from "bignumber.js";
 import {mock, when, anything, instance, verify} from "ts-mockito";
 
