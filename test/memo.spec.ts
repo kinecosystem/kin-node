@@ -1,7 +1,7 @@
 import {
     Memo,
-    TransactionType, 
-    MAX_TRANSACTION_TYPE, 
+    TransactionType,
+    MAX_TRANSACTION_TYPE,
 } from "../src"
 import { MAX_APP_INDEX } from "../src/memo"
 
@@ -17,7 +17,7 @@ test('TestMemo_Valid', () => {
         expect(emptyFK.equals(m.ForeginKey())).toBe(true)
     }
 
-    for (let t = TransactionType.Spend; t < MAX_TRANSACTION_TYPE; t++) {
+    for (let t = TransactionType.None; t < MAX_TRANSACTION_TYPE; t++) {
         const m = Memo.new(1, t, 1, emptyFK)
 
         expect(m.Version()).toBe(1)
@@ -72,10 +72,7 @@ test('TestMemo_Invalid', () => {
     expect(Memo.IsValid(m, true)).toBeFalsy()
 
     // invalid tx type
-    m = Memo.new(1, 0, 1, fk)
-    expect(Memo.IsValid(m)).toBeFalsy()
-    expect(Memo.IsValid(m, false)).toBeFalsy()
-    expect(Memo.IsValid(m, true)).toBeFalsy()
+    expect(() => Memo.new(1, TransactionType.Unknown, 1, fk)).toThrow("cannot use unknown transaction type")
 
     // Version higher than configured
     m = Memo.new(2, TransactionType.Earn, 1, fk)

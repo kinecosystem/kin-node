@@ -154,7 +154,7 @@ export class Internal {
                         case transactionpb.GetTransactionResponse.State.SUCCESS: {
                             const envelope = xdr.TransactionEnvelope.fromXDR(Buffer.from(resp.getItem()!.getEnvelopeXdr()!));
 
-                            let type: TransactionType = TransactionType.UNKNOWN;
+                            let type: TransactionType = TransactionType.Unknown;
                             const memo = Memo.fromXdr(envelope.v0().tx().memo(), true);
                             if (memo) {
                                 type = memo.TransactionType();

@@ -6,7 +6,7 @@
                 {
                     "sender": "bTee1/44oz+mSEj6vGV47fe9ESEzVoqm6E5/iNscH8w=",
                     "destination": "lKWxfP3t+hGrMtmDM2A0GVMKnGSswwg8zInPmh6ncoc=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"
@@ -14,7 +14,7 @@
                 {
                     "sender": "bTee1/44oz+mSEj6vGV47fe9ESEzVoqm6E5/iNscH8w=",
                     "destination": "ePzc215zIKe+KF+bZ3BHIJRYTgl0T+4TMh7wzTCUxXA=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"
@@ -22,7 +22,7 @@
                 {
                     "sender": "bTee1/44oz+mSEj6vGV47fe9ESEzVoqm6E5/iNscH8w=",
                     "destination": "S7f3GY/2vtmFmL2bZqyeo93MHauDTLXPsF0i0O6aUjI=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"
@@ -30,7 +30,7 @@
                 {
                     "sender": "bTee1/44oz+mSEj6vGV47fe9ESEzVoqm6E5/iNscH8w=",
                     "destination": "B5tHh1AXZkX01gW4m8nHitIR3jCto39r97O/ScLtdNs=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"
@@ -38,7 +38,7 @@
                 {
                     "sender": "bTee1/44oz+mSEj6vGV47fe9ESEzVoqm6E5/iNscH8w=",
                     "destination": "jSat78jzu6cPStY26h/a4Ign52bt+blsZnrTg7c1PmQ=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"
@@ -142,7 +142,7 @@
                 {
                     "sender": "uaMbxt5LB8E3w6+tGjxi4dbUFiIrrnijc44U2KevTKI=",
                     "destination": "1NLKca5puNNIx2hdJy6GXwtfkAxE+iYQx5uE54+rQpY=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"
@@ -150,7 +150,7 @@
                 {
                     "sender": "uaMbxt5LB8E3w6+tGjxi4dbUFiIrrnijc44U2KevTKI=",
                     "destination": "rVDV6IJ+UzfHNbOsWILCijeXykZHIxxchVnLJlf5pMw=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"
@@ -158,7 +158,7 @@
                 {
                     "sender": "uaMbxt5LB8E3w6+tGjxi4dbUFiIrrnijc44U2KevTKI=",
                     "destination": "vLLRQ1aoSnMWWAQmCKJ+lts8SIUG18niOvSl13g1+eo=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"
@@ -166,7 +166,7 @@
                 {
                     "sender": "uaMbxt5LB8E3w6+tGjxi4dbUFiIrrnijc44U2KevTKI=",
                     "destination": "SXkDkIQxXI5sejM3SnD6zw8We803ucdPM8/EWn2r4mg=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"
@@ -174,7 +174,7 @@
                 {
                     "sender": "uaMbxt5LB8E3w6+tGjxi4dbUFiIrrnijc44U2KevTKI=",
                     "destination": "ZNz0rIIo2LdvHWpXiq9CmFmzRs4Gaa5WSOCpHroAHlk=",
-                    "type": 0,
+                    "type": -1,
                     "quarks": 10,
                     "invoice": null,
                     "memo": "1-test"

@@ -41,6 +41,9 @@ export class Memo {
         if (version > 7) {
             throw new Error("invalid version")
         }
+        if (type == TransactionType.Unknown) {
+            throw new Error("cannot use unknown transaction type")
+        }
 
         const b = Buffer.alloc(32)
 
@@ -81,7 +84,7 @@ export class Memo {
             return false
         }
 
-        if (m.TransactionType() == 0) {
+        if (m.TransactionType() == -1) {
             return false
         }
 
@@ -116,7 +119,7 @@ export class Memo {
     }
 
     // ForeignKey returns an identifier in an auxiliary service that contains
-    // additional information related to the transaction. 
+    // additional information related to the transaction.
     ForeginKey(): Buffer {
         const fk = Buffer.alloc(29)
 
