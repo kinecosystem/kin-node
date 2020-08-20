@@ -97,4 +97,12 @@ test('TestMemo_from', () => {
     const strictlyValid = Memo.from(Buffer.from("JQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 'base64'))
     expect(Memo.IsValid(strictlyValid)).toBeTruthy()
     expect(Memo.IsValid(strictlyValid, true)).toBeTruthy()
+
+    // Test deserialization with an unknown tx type
+    const unknownTxType = Memo.from(Buffer.from("RQUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 'base64'))
+    expect(Memo.IsValid(unknownTxType)).toBeTruthy()
+    expect(Memo.IsValid(unknownTxType, false)).toBeTruthy()
+    expect(Memo.IsValid(unknownTxType, true)).toBeFalsy()
+    expect(unknownTxType.TransactionType()).toBe(TransactionType.Unknown)
+    expect(unknownTxType.TransactionTypeRaw()).toBe(10)
 })

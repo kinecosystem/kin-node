@@ -41,7 +41,7 @@ export class Memo {
         if (version > 7) {
             throw new Error("invalid version")
         }
-        if (type == TransactionType.Unknown) {
+        if (type < 0) {
             throw new Error("cannot use unknown transaction type")
         }
 
@@ -84,7 +84,7 @@ export class Memo {
             return false
         }
 
-        if (m.TransactionType() == -1) {
+        if (m.TransactionTypeRaw() == -1) {
             return false
         }
 
@@ -96,7 +96,7 @@ export class Memo {
             return false
         }
 
-        return m.TransactionType() <= MAX_TRANSACTION_TYPE
+        return m.TransactionType() >= 0 && m.TransactionType() <= MAX_TRANSACTION_TYPE
     }
 
     // Version returns the memo encoding version.
@@ -107,6 +107,19 @@ export class Memo {
     // TransactionType returns the type of the transaction the memo is
     // attached to.
     TransactionType(): TransactionType {
+        const raw = this.TransactionTypeRaw()
+        if (raw >= 0 && raw <= MAX_TRANSACTION_TYPE) {
+            return raw
+        }
+
+        return TransactionType.Unknown
+    }
+
+    // TransactionTypeRaw returns the type of the transaction the memo is
+    // attached to, even if it is unsupported by this implementation. It should
+    // only be used as a fallback if the raw value is needed when TransactionType()
+    // yieleds TransactionType.Unknown.
+    TransactionTypeRaw(): TransactionType {
         return (this.buffer[0] >> 5) | (this.buffer[1]&0x3)<<3
     }
 
