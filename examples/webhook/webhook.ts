@@ -60,7 +60,7 @@ app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: Sign
 
     // Note: if we didn't sign or reject, then the transaction will still go through,
     //       but fees will be charged.
-    resp.sign(new PrivateKey(Keypair.random()));
+    resp.sign(whitelistKey);
 }, secret))
 
 
