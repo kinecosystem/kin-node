@@ -3,7 +3,8 @@
     "target": "ES2015",
     "module": "commonjs",
     "declaration": true,
-    "outDir": "./dist",
+    "rootDir": "src/",
+    "outDir": "dist/",
     "strict": true,
     "esModuleInterop": true,
     "moduleResolution": "node"
@@ -11,6 +12,7 @@
   "exclude": [
     "dist",
     "node_modules",
-    "**/*.spec.ts",
+    "examples",
+    "**/*.spec.ts"
   ]
 }
