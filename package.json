@@ -1,6 +1,6 @@
 {
   "name": "@kinecosystem/kin-sdk-v2",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Kin Node SDK",
   "author": "Kik Engineering",
   "email": "engineering@kik.com",
@@ -16,7 +16,6 @@
   ],
   "dependencies": {
     "@grpc/grpc-js": "^1.1.2",
-    "@kinecosystem/kin-sdk": "^0.20.8",
     "@types/bs58": "^4.0.1",
     "@types/express": "^4.17.7",
     "@types/google-protobuf": "^3.7.2",
