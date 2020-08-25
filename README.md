@@ -56,7 +56,7 @@ await client.createAccount(privateKey);
 #### Get a Transaction
 The `getTransaction` method gets transaction data by transaction hash.
 ```typescript
-const txHash = Buffer.from("<some has value>", "hex");
+const txHash = Buffer.from("<hex encoded transaction hash>", "hex");
 const transactionData = await client.getTransaction(txHash);
 ```
 
