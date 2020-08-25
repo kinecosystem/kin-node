@@ -57,13 +57,13 @@ await client.createAccount(privateKey);
 The `getTransaction` method gets transaction data by transaction hash.
 ```typescript
 const txHash = Buffer.from("<some has value>", "hex");
-const transactionData = await client.get_transaction(txHash);
+const transactionData = await client.getTransaction(txHash);
 ```
 
 #### Get an Account Balance
 The `getBalance` method gets the balance of the provided account, in [quarks](https://docs.kin.org/terms-and-concepts#quark)
 ```typescript
-const publicKey = PublicKey.fromAddress("");
+const publicKey = PublicKey.fromString("");
 const balance = await client.getBalance(publicKey);
 ```
 
@@ -98,11 +98,11 @@ transactions where possible and submits as many transactions as necessary to sub
 ```typescript
 const earns: Earn[] = [
     {
-        destination: PublicKey.fromAddress("xx"),
+        destination: PublicKey.fromString("xx"),
         quarks: kinToQuarks("1"),
     },
     {
-        destination: PublicKey.fromAddress("yy"),
+        destination: PublicKey.fromString("yy"),
         quarks: kinToQuarks("1"),
     }
 ];
