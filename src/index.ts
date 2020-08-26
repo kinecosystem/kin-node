@@ -178,7 +178,7 @@ export function paymentsFromEnvelope(envelope: xdr.TransactionEnvelope, type: Tr
 
         if (invoiceList) {
             p.invoice = protoToInvoice(invoiceList.getInvoicesList()[i])
-        } else if (envelope.v0().tx().memo().text()) {
+        } else if (envelope.v0().tx().memo().switch() == xdr.MemoType.memoText()) {
             p.memo = envelope.v0().tx().memo().text().toString();
         }
 
