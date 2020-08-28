@@ -37,7 +37,10 @@ app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: Sign
 
         // In this example, we don't want to whitelist transactions that aren't sending
         // kin to us.
-        if (p.destination.equals(whitelistKey.publicKey())) {
+        //
+        // Note: this is purely demonstrating WrongDestination. Some apps may wish to
+        // whitelist everything.
+        if (!p.destination.equals(whitelistKey.publicKey())) {
             resp.markWrongDestination(i);
         }
 
