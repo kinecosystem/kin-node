@@ -192,6 +192,7 @@ test("submitPayment", async() => {
         const resp = await client.submitPayment(p);
         expect(request).toBeDefined();
         expect(request!.envelope.v0().tx().seqNum().low).toBe(1);
+        expect(request!.envelope.v0().tx().operations()[0].sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
 
         if (p.source) {
             expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(source.kp.rawPublicKey());
@@ -228,6 +229,7 @@ test("submitPayment", async() => {
         const resp = await client.submitPayment(p);
         expect(request).toBeDefined();
         expect(request!.envelope.v0().tx().seqNum().low).toBe(1);
+        expect(request!.envelope.v0().tx().operations()[0].sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
 
         if (p.source) {
             expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(source.kp.rawPublicKey());
@@ -454,6 +456,7 @@ test("submitEarnBatch", async() => {
 
             for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
                 const op = tx.operations()[opIndex];
+                expect(op.sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
                 expect(op.body().paymentOp().amount().low).toBe((reqId * 100 + opIndex + 1));
                 expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[reqId * 100 + opIndex].destination.buffer);
             }

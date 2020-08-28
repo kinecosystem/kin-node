@@ -193,6 +193,7 @@ export class Client {
         }
 
         const op = Operation.payment({
+            source: payment.sender.publicKey().stellarAddress(),
             destination: payment.destination.stellarAddress(),
             asset: Asset.native(),
             // In Kin, the base currency has been 'scaled' by
@@ -356,6 +357,7 @@ export class Client {
         const ops: xdr.Operation[] = [];
         for (const e of batch.earns) {
             ops.push(Operation.payment({
+                source: batch.sender.publicKey().stellarAddress(),
                 destination: e.destination.stellarAddress(),
                 asset: Asset.native(),
                 // In Kin, the base currency has been 'scaled' by
