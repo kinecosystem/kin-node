@@ -196,7 +196,8 @@ export class Internal {
                             break
                         }
                         case transactionpb.SubmitTransactionResponse.Result.REJECTED: {
-                            throw new TransactionRejected();
+                            reject(new TransactionRejected());
+                            return;
                         }
                         case transactionpb.SubmitTransactionResponse.Result.INVOICE_ERROR: {
                             result.InvoiceErrors = resp.getInvoiceErrorsList();

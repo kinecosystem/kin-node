@@ -209,28 +209,28 @@ export class Client {
         const result = await this.signAndSubmit(signers, [op], memo, invoiceList);
         if (result.Errors && result.Errors.OpErrors) {
             if (result.Errors.OpErrors.length != 1) {
-                throw new Error("invalid number of operation errors. expected 0 or 1");
+                return Promise.reject(new Error("invalid number of operation errors. expected 0 or 1"));
             }
 
-            throw result.Errors.OpErrors[0];
+            return Promise.reject(result.Errors.OpErrors[0]);
         }
         if (result.Errors && result.Errors.TxError) {
-            throw result.Errors.TxError;
+            return Promise.reject(result.Errors.TxError);
         }
         if (result.InvoiceErrors && result.InvoiceErrors.length > 0) {
             if (result.InvoiceErrors.length != 1) {
-                throw new Error("invalid number of invoice errors. expected 0 or 1");
+                return Promise.reject(new Error("invalid number of invoice errors. expected 0 or 1"));
             }
 
             switch (result.InvoiceErrors[0].getReason()) {
                 case transactionpb.SubmitTransactionResponse.InvoiceError.Reason.ALREADY_PAID:
-                    throw new AlreadyPaid();
+                    return Promise.reject(new AlreadyPaid());
                 case transactionpb.SubmitTransactionResponse.InvoiceError.Reason.WRONG_DESTINATION:
-                    throw new WrongDestination();
+                    return Promise.reject(new WrongDestination());
                 case transactionpb.SubmitTransactionResponse.InvoiceError.Reason.SKU_NOT_FOUND:
-                    throw new SkuNotFound();
+                    return Promise.reject(new SkuNotFound());
                 default:
-                    throw new Error("unknown invoice error");
+                    return Promise.reject(new Error("unknown invoice error"));
             }
         }
 
@@ -249,17 +249,17 @@ export class Client {
         if (batch.memo) {
             for (const r of batch.earns) {
                 if (r.invoice) {
-                    throw new Error("cannot have invoice set when memo is set");
+                    return Promise.reject(new Error("cannot have invoice set when memo is set"));
                 }
             }
         } else {
             if (batch.earns[0].invoice && !this.appIndex) {
-                throw new Error("cannot submit earn batch without an app index");
+                return Promise.reject(new Error("cannot submit earn batch without an app index"));
             }
 
             for (let i = 0; i < batch.earns.length - 1; i++) {
                 if ((batch.earns[i].invoice == undefined) != (batch.earns[i+1].invoice == undefined)) {
-                    throw new Error("either all or none of the earns should have an invoice set");
+                    return Promise.reject(new Error("either all or none of the earns should have an invoice set"));
                 }
             }
         }
@@ -386,7 +386,7 @@ export class Client {
             let fk = Buffer.alloc(29);
             if (invoiceList.getInvoicesList().length > 0) {
                 if (invoiceList.getInvoicesList().length != batch.earns.length) {
-                    throw new Error("either all or none of the earns should have an invoice");
+                    return Promise.reject(new Error("either all or none of the earns should have an invoice"));
                 }
 
                 const serialized = invoiceList.serializeBinary();
@@ -401,7 +401,7 @@ export class Client {
 
         const result = await this.signAndSubmit(signers, ops, memo, invoiceList);
         if (result.InvoiceErrors) {
-            throw new Error("unexpected invoice errors present");
+            return Promise.reject(new Error("unexpected invoice errors present"));
         }
 
         return Promise.resolve(result);
@@ -436,7 +436,7 @@ export class Client {
 
             result = await this.internal.submitStellarTransaction(tx.toEnvelope(), invoiceList);
             if (result.Errors && result.Errors.TxError instanceof BadNonce) {
-                throw new BadNonce();
+                return Promise.reject(new BadNonce());
             }
 
             return result;

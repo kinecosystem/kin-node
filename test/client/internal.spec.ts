@@ -10,7 +10,7 @@ import transactionpb from "@kinecosystem/agora-api/node/transaction/v3/transacti
 import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_grpc_pb";
 
 import { InternalClient } from "../../src/client";
-import { Keypair, xdr } from "stellar-base";
+import { xdr } from "stellar-base";
 import { AccountExists, InvalidSignature, TransactionRejected } from "../../src/errors";
 import {
     PrivateKey,
@@ -233,7 +233,7 @@ test('submitStellarTransaction rejected', async() => {
     const client = new InternalClient({ accountClient: instance(accountClient), txClient: instance(txClient) });
 
     try {
-        await client.submitStellarTransaction(xdr.TransactionEnvelope.fromXDR(envelopeBytes))
+        await client.submitStellarTransaction(xdr.TransactionEnvelope.fromXDR(envelopeBytes));
         fail();
     } catch (err) {
         expect(err).toBeInstanceOf(TransactionRejected);

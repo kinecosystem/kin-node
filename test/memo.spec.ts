@@ -120,9 +120,9 @@ test("parsePaymentsFromEnvelope hash memo without invoice", () => {
     expect(payments).toHaveLength(2);
 
     for (const p of payments) {
-        expect(p.sender).toBe(sender);
-        expect(p.destination).toBe(dest);
-        expect(p.quarks).toBe(kinToQuarks("5"));
+        expect(p.sender).toStrictEqual(sender);
+        expect(p.destination).toStrictEqual(dest);
+        expect(p.quarks).toBe(kinToQuarks("5").toString());
         expect(p.type).toBe(TransactionType.Spend);
         expect(p.invoice).toBeUndefined();
         expect(p.memo).toBeUndefined();
