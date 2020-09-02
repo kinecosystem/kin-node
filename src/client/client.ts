@@ -408,11 +408,14 @@ export class Client {
     }
 
     private async signAndSubmit(signers: PrivateKey[],  operations: xdr.Operation[], memo?: Memo, invoiceList?: commonpb.InvoiceList):  Promise<SubmitStellarTransactionResult> {
+        const accountInfo = await this.internal.getAccountInfo(signers[0].publicKey());
+        let offset = new BigNumber(0);
+
         let result: SubmitStellarTransactionResult;
         const fn = async () => {
-            const accountInfo = await this.internal.getAccountInfo(signers[0].publicKey());
+            const sequence = new BigNumber(accountInfo.getSequenceNumber()).plus(offset);
             const builder = new TransactionBuilder(
-                new Account(signers[0].publicKey().stellarAddress(), accountInfo.getSequenceNumber()),
+                new Account(signers[0].publicKey().stellarAddress(), sequence.toString()),
                 {
                     fee: "100",
                     networkPassphrase: this.networkPassphrase,
@@ -436,6 +439,7 @@ export class Client {
 
             result = await this.internal.submitStellarTransaction(tx.toEnvelope(), invoiceList);
             if (result.Errors && result.Errors.TxError instanceof BadNonce) {
+                offset = offset.plus(1);
                 return Promise.reject(new BadNonce());
             }
 
