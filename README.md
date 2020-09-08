@@ -88,7 +88,7 @@ A `Payment` has the following required properties:
 - `quarks`: The amount of the payment, in [quarks](https://docs.kin.org/terms-and-concepts#quark).
 
 Additionally, it has some optional properties:
-- `source`: The private key of a source account to use for the transaction. If unset, `sender` will be used as the transaction source.
+- `channel`: The private key of a channel account to use as the source of the transaction. If unset, `sender` will be used as the transaction source.
 - `invoice`: An [Invoice](https://docs.kin.org/how-it-works#invoices) to associate with this payment. Cannot be set if `memo` is set.
 - `memo` A text memo to include in the transaction. Cannot be set if `invoice` is set.
 
@@ -121,7 +121,7 @@ A single `Earn` has the following properties:
 The `submitEarnBatch` method has the following parameters:
 - `sender`:  The private key of the account from which the earns will be sent.
 - `earns`: The list of earns to send.
-- `source`: (optional): The private key of an account to use as the transaction source. If not set, `sender` will be used as the source.
+- `channel`: (optional): The private key of a channel account to use as the transaction source. If not set, `sender` will be used as the source.
 - `memo`: (optional) A text memo to include in the transaction. Cannot be used if the earns have invoices associated with them.
 
 ### Examples

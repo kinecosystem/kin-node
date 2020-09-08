@@ -144,7 +144,7 @@ test("submitPayment", async() => {
         });
 
     const sender = PrivateKey.random();
-    const source = PrivateKey.random();
+    const channel = PrivateKey.random();
     const dest = PrivateKey.random();
 
     const payments: Payment[] = [
@@ -156,7 +156,7 @@ test("submitPayment", async() => {
         },
         {
             sender: sender,
-            source: source,
+            channel: channel,
             destination: dest.publicKey(),
             type: TransactionType.Spend,
             quarks: new BigNumber(11),
@@ -194,8 +194,8 @@ test("submitPayment", async() => {
         expect(request!.envelope.v0().tx().seqNum().low).toBe(1);
         expect(request!.envelope.v0().tx().operations()[0].sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
 
-        if (p.source) {
-            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(source.kp.rawPublicKey());
+        if (p.channel) {
+            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
             expect(request!.envelope.v0().signatures()).toHaveLength(2);
         } else {
             expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
@@ -231,8 +231,8 @@ test("submitPayment", async() => {
         expect(request!.envelope.v0().tx().seqNum().low).toBe(1);
         expect(request!.envelope.v0().tx().operations()[0].sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
 
-        if (p.source) {
-            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(source.kp.rawPublicKey());
+        if (p.channel) {
+            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
             expect(request!.envelope.v0().signatures()).toHaveLength(3);
         } else {
             expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
@@ -350,7 +350,7 @@ test("submitPayment failure", async() => {
 
 test("submitEarnBatch", async() => {
     const sender = PrivateKey.random();
-    const source = PrivateKey.random();
+    const channel = PrivateKey.random();
 
     const earns = new Array<Earn>();
     for (let i = 0; i < 202; i++) {
@@ -384,7 +384,7 @@ test("submitEarnBatch", async() => {
         },
         {
             sender: sender,
-            source: source,
+            channel: channel,
             earns: earns,
         },
         {
@@ -434,8 +434,8 @@ test("submitEarnBatch", async() => {
             expect(tx.operations()).toHaveLength(Math.min(100, b.earns.length - reqId*100));
             expect(tx.seqNum().low).toBe(reqId+1);
 
-            if (b.source) {
-                expect(tx.sourceAccountEd25519()).toStrictEqual(source.kp.rawPublicKey());
+            if (b.channel) {
+                expect(tx.sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
             } else {
                 expect(tx.sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
             }

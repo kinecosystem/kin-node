@@ -167,8 +167,8 @@ export class Client {
         }
 
         let signers: PrivateKey[];
-        if (payment.source) {
-            signers = [payment.source, payment.sender];
+        if (payment.channel) {
+            signers = [payment.channel, payment.sender];
         } else {
             signers = [payment.sender];
         }
@@ -271,7 +271,7 @@ export class Client {
             const end = Math.min(start+100, batch.earns.length);
             batches.push({
                 sender: batch.sender,
-                source: batch.source,
+                channel: batch.channel,
                 memo: batch.memo,
                 earns: batch.earns.slice(start, end),
             });
@@ -348,8 +348,8 @@ export class Client {
 
     private async submitSingleEarnBatch(batch: EarnBatch): Promise<SubmitStellarTransactionResult> {
         let signers: PrivateKey[];
-        if (batch.source) {
-            signers = [batch.source, batch.sender];
+        if (batch.channel) {
+            signers = [batch.channel, batch.sender];
         } else {
             signers = [batch.sender];
         }

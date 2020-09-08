@@ -126,7 +126,7 @@ export interface Payment {
     type:        TransactionType
     quarks:      BigNumber
 
-    source?: PrivateKey
+    channel?: PrivateKey
 
     invoice?: Invoice
     memo?:    string
@@ -204,7 +204,7 @@ export class TransactionData {
 // EarnBatch is a batch of earn payments to be sent.
 export interface EarnBatch {
     sender:  PrivateKey
-    source?: PrivateKey
+    channel?: PrivateKey
 
     memo?: string
 
