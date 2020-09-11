@@ -19,6 +19,10 @@ import {
 import {errorsFromXdr, AccountDoesNotExist, AccountExists, TransactionRejected} from "../errors"
 import {ShouldRetry, retryAsync, limit} from "../retry";
 
+export const SDK_VERSION = "0.2.0";
+export const USER_AGENT_HEADER = "kin-user-agent";
+export const USER_AGENT = `KinSDK/${SDK_VERSION} node/${process.version}`;
+
 export class SubmitStellarTransactionResult {
     TxHash:         Buffer
     InvoiceErrors?: transactionpb.SubmitTransactionResponse.InvoiceError[]
@@ -43,9 +47,10 @@ export interface InternalClientConfig {
 // it is exported in case there is some strong reason that access
 // to the underlying blockchain primitives are required.
 export class Internal {
-    txClient: transactiongrpc.TransactionClient
+    txClient:      transactiongrpc.TransactionClient
     accountClient: accountgrpc.AccountClient
-    strategies: ShouldRetry[]
+    strategies:    ShouldRetry[]
+    metadata:      grpc.Metadata
 
     constructor(config: InternalClientConfig) {
         if (config.endpoint) {
@@ -72,6 +77,9 @@ export class Internal {
         } else {
             this.strategies = [limit(3)];
         }
+
+        this.metadata = new grpc.Metadata();
+        this.metadata.set(USER_AGENT_HEADER, USER_AGENT);
     }
 
     async getBlockchainVersion(): Promise<number> { return Promise.resolve(3); }
@@ -85,7 +93,7 @@ export class Internal {
 
         return retryAsync(() => {
             return new Promise<void>((resolve, reject) => {
-                this.accountClient.createAccount(req, (err, resp) => {
+                this.accountClient.createAccount(req, this.metadata, (err, resp) => {
                     if (err) {
                         reject(err);
                         return;
@@ -111,7 +119,7 @@ export class Internal {
 
         return retryAsync(() => {
             return new Promise<accountpb.AccountInfo>((resolve, reject) => {
-                this.accountClient.getAccountInfo(req, (err, resp) => {
+                this.accountClient.getAccountInfo(req, this.metadata, (err, resp) => {
                     if (err) {
                         reject(err);
                         return;
@@ -137,7 +145,7 @@ export class Internal {
 
         return retryAsync(() => {
             return new Promise<TransactionData|undefined>((resolve, reject) => {
-                this.txClient.getTransaction(req, (err, resp) => {
+                this.txClient.getTransaction(req, this.metadata, (err, resp) => {
                     if (err) {
                         reject(err);
                         return;
@@ -182,7 +190,7 @@ export class Internal {
 
         return retryAsync(() => {
             return new Promise<SubmitStellarTransactionResult>((resolve, reject) => {
-                this.txClient.submitTransaction(req, (err, resp) => {
+                this.txClient.submitTransaction(req, this.metadata, (err, resp) => {
                     if (err) {
                         reject(err);
                         return;

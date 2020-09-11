@@ -10,6 +10,7 @@ import transactionpb from "@kinecosystem/agora-api/node/transaction/v3/transacti
 import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_grpc_pb";
 
 import { InternalClient } from "../../src/client";
+import { USER_AGENT_HEADER, USER_AGENT } from "../../src/client/internal";
 import { xdr } from "stellar-base";
 import { AccountExists, InvalidSignature, TransactionRejected } from "../../src/errors";
 import {
@@ -19,6 +20,18 @@ import {
     InvoiceItem,
     invoiceToProto,
  } from "../../src";
+
+function validateHeaders(md: grpc.Metadata): grpc.ServiceError | undefined{
+    if (md.getMap()[USER_AGENT_HEADER] != USER_AGENT) {
+        return {
+            name: "",
+            message: "missing kin-user-agent",
+            code: grpc.status.INVALID_ARGUMENT,
+        }
+    }
+
+    return undefined
+}
 
 test('getBlockchainVersion returns 3', async () => {
     const accountClient = mock(accountgrpc.AccountClient);
@@ -36,9 +49,15 @@ test('createStellarAccount', async () => {
     const txClient = mock(transactiongrpc.TransactionClient)
 
     let created = false;
-    when(accountClient.createAccount(anything(), anything()))
-        .thenCall((_, callback) => {
+    when(accountClient.createAccount(anything(), anything(), anything()))
+        .thenCall((_, md: grpc.Metadata, callback) => {
             const resp = new accountpb.CreateAccountResponse();
+
+            const err = validateHeaders(md);
+            if (err != undefined) {
+                callback(err, undefined);
+                return
+            }
 
             if (created) {
                 resp.setResult(accountpb.CreateAccountResponse.Result.EXISTS);
@@ -89,8 +108,14 @@ test('getTransaction', async () => {
     const txClient = mock(transactiongrpc.TransactionClient)
 
     let currentCase = 0;
-    when(txClient.getTransaction(anything(), anything()))
-        .thenCall((_, callback) => {
+    when(txClient.getTransaction(anything(), anything(), anything()))
+        .thenCall((_, md: grpc.Metadata, callback) => {
+            const err = validateHeaders(md);
+            if (err != undefined) {
+                callback(err, undefined);
+                return
+            }
+
             const resp = transactionpb.GetTransactionResponse
                 .deserializeBinary(Buffer.from(testCases[currentCase].response, "base64"));
             callback(undefined, resp);
@@ -148,8 +173,14 @@ test('submitStellarTranaction', async () => {
     const envelopeBytes = Buffer.from("AAAAAKiU54hhLR7yt7yGloTK6yrLPMXbm6v8z3qTwN7Wx81QAAAAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAQAAAAColOeIYS0e8re8hpaEyusqyzzF25ur/M96k8De1sfNUAAAAAEAAAAAXpMpylSzJtiXOe+Qel7MmgWqc+AwelwYBUeAvTf46VQAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64");
     let invoiceList: commonpb.InvoiceList;
 
-    when(txClient.submitTransaction(anything(), anything()))
-        .thenCall((req: transactionpb.SubmitTransactionRequest, callback) => {
+    when(txClient.submitTransaction(anything(), anything(), anything()))
+        .thenCall((req: transactionpb.SubmitTransactionRequest, md: grpc.Metadata, callback) => {
+            const err = validateHeaders(md);
+            if (err != undefined) {
+                callback(err, undefined);
+                return
+            }
+
             expect(req.getEnvelopeXdr()).toStrictEqual(envelopeBytes);
             expect(req.getInvoiceList()).toBe(invoiceList);
 
@@ -193,8 +224,8 @@ test('submitStellarTransaction failed', async() => {
     const envelopeBytes = Buffer.from("AAAAAKiU54hhLR7yt7yGloTK6yrLPMXbm6v8z3qTwN7Wx81QAAAAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAQAAAAColOeIYS0e8re8hpaEyusqyzzF25ur/M96k8De1sfNUAAAAAEAAAAAXpMpylSzJtiXOe+Qel7MmgWqc+AwelwYBUeAvTf46VQAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64");
     const resultBytes = Buffer.from("AAAAAAAAAAD////6AAAAAA==", "base64");
 
-    when(txClient.submitTransaction(anything(), anything()))
-        .thenCall((req: transactionpb.SubmitTransactionRequest, callback) => {
+    when(txClient.submitTransaction(anything(), anything(), anything()))
+        .thenCall((_, __, callback) => {
             const txHash = new commonpb.TransactionHash();
             txHash.setValue(hash);
 
@@ -218,8 +249,8 @@ test('submitStellarTransaction rejected', async() => {
     const hash = Buffer.from("XAoFvA3J/n9+VnQ1/UheMTJx+VBbEkeeQ8i8WJUoxkQ=", "base64");
     const envelopeBytes = Buffer.from("AAAAAKiU54hhLR7yt7yGloTK6yrLPMXbm6v8z3qTwN7Wx81QAAAAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAQAAAAColOeIYS0e8re8hpaEyusqyzzF25ur/M96k8De1sfNUAAAAAEAAAAAXpMpylSzJtiXOe+Qel7MmgWqc+AwelwYBUeAvTf46VQAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64");
 
-    when(txClient.submitTransaction(anything(), anything()))
-        .thenCall((req: transactionpb.SubmitTransactionRequest, callback) => {
+    when(txClient.submitTransaction(anything(), anything(), anything()))
+        .thenCall((_, __, callback) => {
             const txHash = new commonpb.TransactionHash();
             txHash.setValue(hash);
 
@@ -276,8 +307,8 @@ test('submitStellarTransaction invoice error', async() => {
         }),
     ]
 
-    when(txClient.submitTransaction(anything(), anything()))
-        .thenCall((_, callback) => {
+    when(txClient.submitTransaction(anything(), anything(), anything()))
+        .thenCall((_, __, callback) => {
             const txHash = new commonpb.TransactionHash();
             txHash.setValue(hash);
 
@@ -314,8 +345,8 @@ test('internal retry', async() => {
     const accountClient = mock(accountgrpc.AccountClient)
     const txClient = mock(transactiongrpc.TransactionClient)
 
-    when(accountClient.createAccount(anything(), anything()))
-        .thenCall((_, callback) => {
+    when(accountClient.createAccount(anything(), anything(), anything()))
+        .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
                 message: "",
@@ -323,8 +354,8 @@ test('internal retry', async() => {
             }
             callback(err, new accountpb.CreateAccountRequest());
         });
-    when(accountClient.getAccountInfo(anything(), anything()))
-        .thenCall((_, callback) => {
+    when(accountClient.getAccountInfo(anything(), anything(), anything()))
+        .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
                 message: "",
@@ -332,8 +363,8 @@ test('internal retry', async() => {
             }
             callback(err, new accountpb.GetAccountInfoResponse());
         });
-    when(txClient.getTransaction(anything(), anything()))
-        .thenCall((_, callback) => {
+    when(txClient.getTransaction(anything(), anything(), anything()))
+        .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
                 message: "",
@@ -341,8 +372,8 @@ test('internal retry', async() => {
             }
             callback(err, new transactionpb.GetTransactionResponse());
         });
-    when(txClient.submitTransaction(anything(), anything()))
-        .thenCall((_, callback) => {
+    when(txClient.submitTransaction(anything(), anything(), anything()))
+        .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
                 message: "",
@@ -359,7 +390,7 @@ test('internal retry', async() => {
     } catch (err) {
         expect(err).toBeDefined();
     }
-    verify(accountClient.createAccount(anything(), anything())).times(3);
+    verify(accountClient.createAccount(anything(), anything(), anything())).times(3);
 
     try {
         await client.getAccountInfo(new PublicKey(Buffer.alloc(32)));
@@ -367,7 +398,7 @@ test('internal retry', async() => {
     } catch (err) {
         expect(err).toBeDefined();
     }
-    verify(accountClient.createAccount(anything(), anything())).times(3);
+    verify(accountClient.createAccount(anything(), anything(), anything())).times(3);
 
     try {
         await client.getTransaction(Buffer.alloc(32));
@@ -375,7 +406,7 @@ test('internal retry', async() => {
     } catch (err) {
         expect(err).toBeDefined();
     }
-    verify(txClient.getTransaction(anything(), anything())).times(3);
+    verify(txClient.getTransaction(anything(), anything(), anything())).times(3);
 
     try {
         const envelopeBytes = Buffer.from("AAAAAKiU54hhLR7yt7yGloTK6yrLPMXbm6v8z3qTwN7Wx81QAAAAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAQAAAAColOeIYS0e8re8hpaEyusqyzzF25ur/M96k8De1sfNUAAAAAEAAAAAXpMpylSzJtiXOe+Qel7MmgWqc+AwelwYBUeAvTf46VQAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64");
@@ -384,5 +415,5 @@ test('internal retry', async() => {
     } catch (err) {
         expect(err).toBeDefined();
     }
-    verify(txClient.submitTransaction(anything(), anything())).times(3);
+    verify(txClient.submitTransaction(anything(), anything(), anything())).times(3);
 })
