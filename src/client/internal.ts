@@ -21,6 +21,7 @@ import {ShouldRetry, retryAsync, limit} from "../retry";
 
 export const SDK_VERSION = "0.2.2";
 export const USER_AGENT_HEADER = "kin-user-agent";
+export const KIN_VERSION_HEADER = "kin-version";
 export const USER_AGENT = `KinSDK/${SDK_VERSION} node/${process.version}`;
 
 export class SubmitStellarTransactionResult {
@@ -39,6 +40,7 @@ export interface InternalClientConfig {
     txClient?:      transactiongrpc.TransactionClient
 
     strategies?: ShouldRetry[]
+    kinVersion?: number
 }
 
 // Internal is the low level gRPC client for Agora used by Client.
@@ -51,6 +53,7 @@ export class Internal {
     accountClient: accountgrpc.AccountClient
     strategies:    ShouldRetry[]
     metadata:      grpc.Metadata
+    kinVersion: number
 
     constructor(config: InternalClientConfig) {
         if (config.endpoint) {
@@ -78,11 +81,18 @@ export class Internal {
             this.strategies = [limit(3)];
         }
 
+        if (config.kinVersion) {
+            this.kinVersion = config.kinVersion;
+        } else {
+            this.kinVersion = 3;
+        }
+
         this.metadata = new grpc.Metadata();
         this.metadata.set(USER_AGENT_HEADER, USER_AGENT);
+        this.metadata.set(KIN_VERSION_HEADER, this.kinVersion.toString());
     }
 
-    async getBlockchainVersion(): Promise<number> { return Promise.resolve(3); }
+    async getBlockchainVersion(): Promise<number> { return Promise.resolve(this.kinVersion); }
 
     async createStellarAccount(key: PrivateKey): Promise<void> {
         const accountId = new commonpb.StellarAccountId();
@@ -168,7 +178,7 @@ export class Internal {
                                 type = memo.TransactionType();
                             }
 
-                            data.payments = paymentsFromEnvelope(envelope, type, resp.getItem()!.getInvoiceList());
+                            data.payments = paymentsFromEnvelope(envelope, type, resp.getItem()!.getInvoiceList(), this.kinVersion);
                             break;
                         }
                         default: {

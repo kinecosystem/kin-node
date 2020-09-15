@@ -20,8 +20,9 @@ import {
     TransactionType,
     invoiceToProto,
     Environment,
+    xdrInt64ToBigNumber,
 
- } from "../../src";
+} from "../../src";
 
 test("client account management", async () => {
     const internal = mock(InternalClient);
@@ -230,6 +231,8 @@ test("submitPayment", async() => {
         expect(request).toBeDefined();
         expect(request!.envelope.v0().tx().seqNum().low).toBe(1);
         expect(request!.envelope.v0().tx().operations()[0].sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
+        const actualAmount = xdrInt64ToBigNumber(request!.envelope.v0().tx().operations()[0].body().paymentOp().amount());
+        expect(actualAmount).toStrictEqual(p.quarks);
 
         if (p.channel) {
             expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
@@ -345,6 +348,128 @@ test("submitPayment failure", async() => {
         fail();
     } catch (err) {
         expect(err).toBeInstanceOf(InsufficientBalance);
+    }
+})
+
+test("submitPayment Kin 2", async() => {
+    const internal = mock(InternalClient);
+
+    when(internal.getAccountInfo(anything()))
+        .thenCall((_: PublicKey) => {
+            return Promise.resolve(new accountpb.AccountInfo());
+        });
+
+    interface submitRequest {
+        envelope: xdr.TransactionEnvelope,
+        invoice?: commonpb.InvoiceList,
+    }
+    let request: submitRequest | undefined;
+    when (internal.submitStellarTransaction(anything(), anything()))
+        .thenCall((envelope: xdr.TransactionEnvelope, invoice?: commonpb.InvoiceList) => {
+            request = {envelope, invoice};
+            return Promise.resolve(new SubmitStellarTransactionResult());
+        });
+
+    const sender = PrivateKey.random();
+    const channel = PrivateKey.random();
+    const dest = PrivateKey.random();
+
+    const payments: Payment[] = [
+        {
+            sender: sender,
+            destination: dest.publicKey(),
+            type: TransactionType.Spend,
+            quarks: new BigNumber(11),
+        },
+        {
+            sender: sender,
+            channel: channel,
+            destination: dest.publicKey(),
+            type: TransactionType.Spend,
+            quarks: new BigNumber(11),
+        },
+        {
+            sender: sender,
+            destination: dest.publicKey(),
+            type: TransactionType.Spend,
+            quarks: new BigNumber(11),
+            memo: "1-test",
+        },
+        {
+            sender: sender,
+            destination: dest.publicKey(),
+            type: TransactionType.Spend,
+            quarks: new BigNumber(11),
+            invoice: {
+                Items: [
+                    {
+                        title: "test",
+                        amount: new BigNumber(10),
+                    }
+                ]
+            },
+        },
+    ];
+
+    let client = new Client(Environment.Test, {
+        appIndex: 1,
+        internal: instance(internal),
+        kinVersion: 2,
+    });
+    for (const p of payments) {
+        const resp = await client.submitPayment(p);
+        expect(request).toBeDefined();
+        expect(request!.envelope.v0().tx().seqNum().low).toBe(1);
+        expect(request!.envelope.v0().tx().operations()[0].sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
+        const actualAmount = xdrInt64ToBigNumber(request!.envelope.v0().tx().operations()[0].body().paymentOp().amount());
+        // The smallest denomination on Kin 2 is 1e-7, which is smaller by than quarks (1e-5) by 1e2. Therefore, we
+        // expect the amount to be equal to p.quarks multiplied by 1e2.
+        expect(actualAmount).toStrictEqual(p.quarks.multipliedBy(1e2));
+
+        if (p.channel) {
+            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
+            expect(request!.envelope.v0().signatures()).toHaveLength(2);
+        } else {
+            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+            expect(request!.envelope.v0().signatures()).toHaveLength(1);
+        }
+
+        if (p.memo) {
+            expect(p.memo).toBe(request!.envelope.v0().tx().memo().text().toString())
+        } else if (p.invoice) {
+            const serialized = request!.invoice!.serializeBinary();
+            const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex")
+            const expected = Memo.new(1, p.type, 1, buf);
+
+            const actual = Memo.fromXdr(request!.envelope.v0().tx().memo(), true);
+            expect(actual?.buffer).toStrictEqual(expected.buffer);
+        } else {
+            expect(request!.envelope.v0().tx().memo().switch()).toBe(xdr.MemoType.memoHash());
+
+            const expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
+            const actual = Memo.fromXdr(request!.envelope.v0().tx().memo(), true);
+            expect(actual?.buffer).toStrictEqual(expected.buffer);
+        }
+    }
+
+    client = new Client(Environment.Test, {
+        appIndex: 1,
+        whitelistKey: PrivateKey.random(),
+        internal: instance(internal),
+    });
+    for (const p of payments) {
+        const resp = await client.submitPayment(p);
+        expect(request).toBeDefined();
+        expect(request!.envelope.v0().tx().seqNum().low).toBe(1);
+        expect(request!.envelope.v0().tx().operations()[0].sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
+
+        if (p.channel) {
+            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
+            expect(request!.envelope.v0().signatures()).toHaveLength(3);
+        } else {
+            expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+            expect(request!.envelope.v0().signatures()).toHaveLength(2);
+        }
     }
 })
 
@@ -590,3 +715,123 @@ test("submitEarnBatch failures", async() => {
         }
     }
 });
+
+test("submitEarnBatch Kin 2", async() => {
+    const sender = PrivateKey.random();
+    const channel = PrivateKey.random();
+
+    const earns = new Array<Earn>();
+    for (let i = 0; i < 202; i++) {
+        const dest = PrivateKey.random();
+        earns.push({
+            destination: dest.publicKey(),
+            quarks: new BigNumber(1 + i),
+        });
+    }
+    const invoiceEarns = new Array<Earn>();
+    for (let i = 0; i < 202; i++) {
+        const dest = PrivateKey.random();
+        invoiceEarns.push({
+            destination: dest.publicKey(),
+            quarks: new BigNumber(1 + i),
+            invoice: {
+                Items: [
+                    {
+                        title: "test",
+                        amount: new BigNumber(i + 1),
+                    }
+                ]
+            },
+        });
+    }
+
+    const batches: EarnBatch[] = [
+        {
+            sender: sender,
+            earns: earns,
+        },
+        {
+            sender: sender,
+            channel: channel,
+            earns: earns,
+        },
+        {
+            sender: sender,
+            earns: invoiceEarns,
+        },
+    ];
+
+    interface submitRequest {
+        envelope: xdr.TransactionEnvelope,
+        invoice?: commonpb.InvoiceList,
+    }
+    let requests = new Array<submitRequest>();
+
+    let seq = 0;
+    const internal = mock(InternalClient);
+    when (internal.getAccountInfo(anything()))
+        .thenCall(() => {
+            const accountInfo = new accountpb.AccountInfo();
+            accountInfo.setSequenceNumber(seq.toString());
+            seq++;
+
+            return Promise.resolve(accountInfo);
+        });
+    when (internal.submitStellarTransaction(anything(), anything()))
+        .thenCall((envelope: xdr.TransactionEnvelope, invoice?: commonpb.InvoiceList) => {
+            requests.push({envelope, invoice});
+            return Promise.resolve(new SubmitStellarTransactionResult());
+        });
+
+    const client = new Client(Environment.Test, {
+        appIndex: 1,
+        internal: instance(internal),
+        kinVersion: 2,
+    });
+
+    for (const b of batches) {
+        requests = new Array<submitRequest>();
+        seq = 0;
+
+        const result = await client.submitEarnBatch(b);
+        expect(requests).toHaveLength(3);
+
+        for (let reqId = 0; reqId < requests.length; reqId++) {
+            const req = requests[reqId];
+            const tx = req.envelope.v0().tx();
+
+            expect(tx.operations()).toHaveLength(Math.min(100, b.earns.length - reqId*100));
+            expect(tx.seqNum().low).toBe(reqId+1);
+
+            if (b.channel) {
+                expect(tx.sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
+            } else {
+                expect(tx.sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+            }
+
+            if (b.memo) {
+                expect(b.memo).toBe(tx.memo().text().toString())
+            } else if (b.earns[0].invoice) {
+                const serialized = req.invoice!.serializeBinary();
+                const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex")
+                const expected = Memo.new(1, TransactionType.Earn, 1, buf);
+                expect(tx.memo().hash()).toStrictEqual(expected.buffer);
+            } else {
+                // since we have an app index configured, we still expect a memo
+                const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
+                expect(tx.memo().switch()).toBe(xdr.MemoType.memoHash());
+                expect(tx.memo().hash()).toStrictEqual(expected.buffer);
+            }
+
+            for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
+                const op = tx.operations()[opIndex];
+                expect(op.sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
+                // The smallest denomination on Kin 2 is 1e-7, which is smaller by than quarks (1e-5) by 1e2. Therefore,
+                // we expect the amount to be multiplied by 1e2.
+                expect(op.body().paymentOp().amount().low).toBe((reqId * 100 + opIndex + 1) * 100);
+                expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[reqId * 100 + opIndex].destination.buffer);
+            }
+        }
+    }
+});
+

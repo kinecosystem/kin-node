@@ -5,7 +5,7 @@ import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 
 import { Client } from "./client";
 import { TransactionErrors } from "./errors";
-import { PublicKey, PrivateKey } from "./keys";
+import { PrivateKey, PublicKey } from "./keys";
 import { Memo } from "./memo";
 
 export {
@@ -33,6 +33,16 @@ export enum Environment {
 export enum NetworkPasshrase {
     Prod = "Kin Mainnet ; December 2018",
     Test = "Kin Testnet ; December 2018",
+    Kin2Prod = "Public Global Kin Ecosystem Network ; June 2018",
+    Kin2Test = "Kin Playground Network ; June 2018",
+}
+
+export const KinAssetCode = "KIN"
+const KinAssetCodeBuffer = Buffer.from([75, 73, 78, 0])
+
+export enum Kin2Issuers {
+    Prod = "GDF42M3IPERQCBLWFEZKQRK77JQ65SCKTU3CW36HZVCX7XX5A5QXZIVK",
+    Test = "GBC3SG6NGTSZ2OMH3FFGB7UVRQWILW367U4GSOOF4TFSZONV42UJXUH7",
 }
 
 // kinToQuarks converts a string representation of kin
@@ -145,8 +155,13 @@ export interface ReadOnlyPayment {
     memo?:    string
 }
 
-export function paymentsFromEnvelope(envelope: xdr.TransactionEnvelope, type: TransactionType, invoiceList?: commonpb.InvoiceList): ReadOnlyPayment[] {
+export function paymentsFromEnvelope(envelope: xdr.TransactionEnvelope, type: TransactionType, invoiceList?: commonpb.InvoiceList, kinVersion?: number): ReadOnlyPayment[] {
+    console.log("kin version: " + kinVersion)
     const payments: ReadOnlyPayment[] = [];
+
+    if (!kinVersion) {
+        kinVersion = 3;
+    }
 
     if (invoiceList && invoiceList.getInvoicesList().length != envelope.v0().tx().operations().length) {
         throw new Error("provided invoice count does not match op count");
@@ -162,6 +177,17 @@ export function paymentsFromEnvelope(envelope: xdr.TransactionEnvelope, type: Tr
             return;
         }
 
+        if (kinVersion === 2) {
+            const assetName = op.body().paymentOp().asset().switch().name
+            if (
+                assetName !== "assetTypeCreditAlphanum4" ||
+                !op.body().paymentOp().asset().alphaNum4().assetCode().equals(KinAssetCodeBuffer)
+            ) {
+                // Only Kin payment operations are supported in this RPC.
+                return;
+            }
+        }
+
         let sender: PublicKey;
         if (op.sourceAccount()) {
             sender = new PublicKey(op.sourceAccount()!.ed25519()!);
@@ -169,10 +195,18 @@ export function paymentsFromEnvelope(envelope: xdr.TransactionEnvelope, type: Tr
             sender = new PublicKey(envelope.v0().tx().sourceAccountEd25519());
         }
 
+        let quarks: string;
+        if (kinVersion === 2) {
+            // The smallest denomination on Kin 2 is 1e-7, which is smaller than quarks (1e-5) by 1e2. Therefore, when
+            // parsing envelope amounts, we divide by 1e2 to get the amount in quarks.
+            quarks = xdrInt64ToBigNumber(op.body().paymentOp().amount()).dividedBy(1e2).toString();
+        } else {
+            quarks = xdrInt64ToBigNumber(op.body().paymentOp().amount()).toString()
+        }
         const p: ReadOnlyPayment = {
             sender: sender,
             destination: new PublicKey(op.body().paymentOp().destination().ed25519()),
-            quarks: xdrInt64ToBigNumber(op.body().paymentOp().amount()).toString(),
+            quarks: quarks,
             type: type,
         }
 

@@ -10,7 +10,7 @@ import transactionpb from "@kinecosystem/agora-api/node/transaction/v3/transacti
 import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_grpc_pb";
 
 import { InternalClient } from "../../src/client";
-import { USER_AGENT_HEADER, USER_AGENT } from "../../src/client/internal";
+import {USER_AGENT_HEADER, USER_AGENT, KIN_VERSION_HEADER} from "../../src/client/internal";
 import { xdr } from "stellar-base";
 import { AccountExists, InvalidSignature, TransactionRejected } from "../../src/errors";
 import {
@@ -21,8 +21,9 @@ import {
     invoiceToProto,
  } from "../../src";
 
-function validateHeaders(md: grpc.Metadata): grpc.ServiceError | undefined{
-    if (md.getMap()[USER_AGENT_HEADER] != USER_AGENT) {
+function validateHeaders(md: grpc.Metadata, expectedVersion: string): grpc.ServiceError | undefined{
+    const mdMap = md.getMap();
+    if (mdMap[USER_AGENT_HEADER] !== USER_AGENT) {
         return {
             name: "",
             message: "missing kin-user-agent",
@@ -30,17 +31,32 @@ function validateHeaders(md: grpc.Metadata): grpc.ServiceError | undefined{
         }
     }
 
+    if (mdMap[KIN_VERSION_HEADER] !== expectedVersion) {
+        return {
+            name: "",
+            message: "incorrect kin_version",
+            code: grpc.status.INVALID_ARGUMENT,
+        }
+    }
+
     return undefined
 }
 
-test('getBlockchainVersion returns 3', async () => {
+test('getBlockchainVersion', async () => {
     const accountClient = mock(accountgrpc.AccountClient);
     const txClient = mock(transactiongrpc.TransactionClient)
-    const client = new InternalClient({
+    let client = new InternalClient({
         accountClient: instance(accountClient),
         txClient: instance(txClient),
     })
     expect(await client.getBlockchainVersion()).toBe(3);
+
+    client = new InternalClient({
+        accountClient: instance(accountClient),
+        txClient: instance(txClient),
+        kinVersion: 2,
+    })
+    expect(await client.getBlockchainVersion()).toBe(2)
 })
 
 test('createStellarAccount', async () => {
@@ -53,7 +69,7 @@ test('createStellarAccount', async () => {
         .thenCall((_, md: grpc.Metadata, callback) => {
             const resp = new accountpb.CreateAccountResponse();
 
-            const err = validateHeaders(md);
+            const err = validateHeaders(md, "3");
             if (err != undefined) {
                 callback(err, undefined);
                 return
@@ -110,7 +126,7 @@ test('getTransaction', async () => {
     let currentCase = 0;
     when(txClient.getTransaction(anything(), anything(), anything()))
         .thenCall((_, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md);
+            const err = validateHeaders(md, "3");
             if (err != undefined) {
                 callback(err, undefined);
                 return
@@ -165,6 +181,90 @@ test('getTransaction', async () => {
     }
 })
 
+test('getTransaction Kin 2', async () => {
+    const testCases: {
+        transaction_data: {
+            tx_hash: string
+            payments: {
+                sender:      string
+                destination: string
+                type:        number
+                quarks:      number
+                memo?:       string
+                invoice: {
+                    items: {
+                        title:        string
+                        description?: string
+                        amount:       string
+                        sku?:         string
+                    }[]
+                }
+            }[],
+        },
+        response: string
+    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_test_kin_2.json")).toString());
+
+    const accountClient = mock(accountgrpc.AccountClient)
+    const txClient = mock(transactiongrpc.TransactionClient)
+
+    let currentCase = 0;
+    when(txClient.getTransaction(anything(), anything(), anything()))
+        .thenCall((_, md: grpc.Metadata, callback) => {
+            const err = validateHeaders(md, "2");
+            if (err != undefined) {
+                callback(err, undefined);
+                return
+            }
+
+            const resp = transactionpb.GetTransactionResponse
+                .deserializeBinary(Buffer.from(testCases[currentCase].response, "base64"));
+            callback(undefined, resp);
+        });
+
+    const client = new InternalClient({ accountClient: instance(accountClient), txClient: instance(txClient), kinVersion: 2 });
+
+    for (let i = 0; i < testCases.length; i++) {
+        currentCase = i;
+        const tc = testCases[i];
+
+        const txData = await client.getTransaction(Buffer.from(tc.transaction_data.tx_hash, "base64"));
+        expect(txData).toBeDefined();
+        expect(txData!.errors).toBeUndefined();
+        expect(txData!.txHash).toStrictEqual(Buffer.from(tc.transaction_data.tx_hash, "base64"));
+
+        const expectedPayments = testCases[currentCase].transaction_data.payments.map(v => {
+            const payment: ReadOnlyPayment = {
+                sender: new PublicKey(Buffer.from(v.sender, "base64")),
+                destination: new PublicKey(Buffer.from(v.destination, "base64")),
+                type: v.type,
+                quarks: new BigNumber(v.quarks).toString(),
+            };
+            if (v.memo) {
+                payment.memo = v.memo
+            }
+            if (v.invoice) {
+                payment.invoice = {
+                    Items: v.invoice.items.map(item => {
+                        const invoiceItem: InvoiceItem = {
+                            title:       item.title,
+                            amount:      new BigNumber(item.amount),
+                        };
+                        if (item.description) {
+                            invoiceItem.description = item.description;
+                        }
+                        if (item.sku) {
+                            invoiceItem.sku = Buffer.from(item.sku, "base64");
+                        }
+                        return invoiceItem;
+                    })
+                };
+            }
+            return payment;
+        });
+        expect(txData!.payments).toStrictEqual(expectedPayments);
+    }
+})
+
 test('submitStellarTranaction', async () => {
     const accountClient = mock(accountgrpc.AccountClient);
     const txClient = mock(transactiongrpc.TransactionClient);
@@ -175,7 +275,7 @@ test('submitStellarTranaction', async () => {
 
     when(txClient.submitTransaction(anything(), anything(), anything()))
         .thenCall((req: transactionpb.SubmitTransactionRequest, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md);
+            const err = validateHeaders(md, "3");
             if (err != undefined) {
                 callback(err, undefined);
                 return

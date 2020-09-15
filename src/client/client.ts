@@ -16,14 +16,19 @@ import transactionpb from "@kinecosystem/agora-api/node/transaction/v3/transacti
 import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_grpc_pb";
 
 import {
+    EarnBatch,
+    EarnBatchResult,
+    Environment,
+    invoiceToProto, Kin2Issuers, KinAssetCode,
+    Memo as KinMemo,
+    NetworkPasshrase,
+    Payment,
     PrivateKey,
     PublicKey,
-    Memo as KinMemo,
+    TransactionData,
     TransactionType,
-    NetworkPasshrase,
 } from "../";
 import { InternalClient, SubmitStellarTransactionResult } from "./";
-import { Environment, TransactionData, Payment, EarnBatch, EarnBatchResult, invoiceToProto } from "../";
 import { AlreadyPaid, SkuNotFound, WrongDestination, BadNonce } from "../errors";
 import { retryAsync, limit, retriableErrors, backoffWithJitter, binaryExpotentialDelay, nonRetriableErrors } from "../retry";
 import { InternalClientConfig } from "./internal";
@@ -39,6 +44,8 @@ export interface ClientConfig {
 
     // An optional whitelist key to sign every transaction with.
     whitelistKey?: PrivateKey
+
+    kinVersion?: number
 }
 
 export interface RetryConfig {
@@ -65,6 +72,8 @@ export class Client {
     maxNonceRetries:   number
     appIndex?:         number
     whitelistKey?:     PrivateKey
+    kinVersion: number
+    issuer?: string
 
     constructor(env: Environment, conf?: ClientConfig) {
         if (conf?.endpoint) {
@@ -82,15 +91,32 @@ export class Client {
             throw new Error("either both or neither gRPC clients must be set");
         }
 
+        if (conf?.kinVersion) {
+            this.kinVersion = conf.kinVersion
+        } else {
+            this.kinVersion = 3;
+        }
+
         let defaultEndpoint: string;
         switch (env) {
             case Environment.Test:
                 this.networkPassphrase = NetworkPasshrase.Test;
                 defaultEndpoint = "api.agorainfra.dev:443";
+                if (this.kinVersion === 2) {
+                    this.networkPassphrase = NetworkPasshrase.Kin2Test
+                    this.issuer = Kin2Issuers.Test;
+                } else {
+                    this.networkPassphrase = NetworkPasshrase.Test;
+                }
                 break;
             case Environment.Prod:
-                this.networkPassphrase = NetworkPasshrase.Prod;
                 defaultEndpoint = "api.agorainfra.net:443";
+                if (this.kinVersion === 2) {
+                    this.networkPassphrase = NetworkPasshrase.Kin2Prod
+                    this.issuer = Kin2Issuers.Prod;
+                } else {
+                    this.networkPassphrase = NetworkPasshrase.Prod;
+                }
                 break;
             default:
                 throw new Error("unsupported env:" + env);
@@ -114,6 +140,7 @@ export class Client {
             endpoint: conf?.endpoint,
             accountClient: conf?.accountClient,
             txClient: conf?.txClient,
+            kinVersion: this.kinVersion,
         }
         if (!internalConf.endpoint && !internalConf.accountClient && !internalConf.endpoint) {
             internalConf.endpoint = defaultEndpoint;
@@ -136,7 +163,13 @@ export class Client {
     // Promise.reject(new AccountExists()) is called if
     // the account already exists.
     async createAccount(key: PrivateKey): Promise<void> {
-        return this.internal.createStellarAccount(key);
+        switch (this.kinVersion) {
+            case 2:
+            case 3:
+                return this.internal.createStellarAccount(key);
+            default:
+                return Promise.reject("unsupported kin version: " + this.kinVersion);
+        }
     }
 
     // getBalance retrieves the balance for an account.
@@ -144,8 +177,14 @@ export class Client {
     // Promise.reject(new AccountDoesNotExist()) is called if
     // the specified account does not exist.
     async getBalance(account: PublicKey): Promise<BigNumber> {
-        return this.internal.getAccountInfo(account)
-            .then(info => new BigNumber(info.getBalance()));
+        switch (this.kinVersion) {
+            case 2:
+            case 3:
+                return this.internal.getAccountInfo(account)
+                    .then(info => new BigNumber(info.getBalance()));
+            default:
+                return Promise.reject("unsupported kin version: " + this.kinVersion);
+        }
     }
 
     // getTransaction retrieves the TransactionData for a txHash.
@@ -162,6 +201,10 @@ export class Client {
     // If the payment has an invoice, an app index _must_ be set.
     // If the payment has a memo, an invoice cannot also be provided.
     async submitPayment(payment: Payment): Promise<Buffer> {
+        if (this.kinVersion !== 3 && this.kinVersion !== 2) {
+            return Promise.reject("unsupported kin version: " + this.kinVersion);
+        }
+
         if (payment.invoice && !this.appIndex) {
             return Promise.reject("cannot submit payment with invoices without an app index");
         }
@@ -192,10 +235,13 @@ export class Client {
             memo = new Memo(MemoHash, kinMemo.buffer);
         }
 
-        const op = Operation.payment({
-            source: payment.sender.publicKey().stellarAddress(),
-            destination: payment.destination.stellarAddress(),
-            asset: Asset.native(),
+        let asset: Asset;
+        let amount: string;
+        if (this.kinVersion === 2) {
+            asset = new Asset(KinAssetCode, this.issuer);
+            amount = payment.quarks.dividedBy(1e5).toFixed(7);
+        } else {
+            asset = Asset.native();
             // In Kin, the base currency has been 'scaled' by
             // a factor of 100 from stellar. That is, 1 Kin is 100x
             // 1 XLM, and the minimum amount is 1e-5 instead of 1e-7.
@@ -203,7 +249,14 @@ export class Client {
             // Since js-stellar's amount here is an XLM (equivalent to Kin),
             // we need to convert it to a quark (divide by 1e5), and then also
             // account for the 100x scaling factor. 1e5 / 100 = 1e7.
-            amount: payment.quarks.dividedBy(1e7).toFixed(7),
+            amount = payment.quarks.dividedBy(1e7).toFixed(7);
+        }
+
+        const op = Operation.payment({
+            source: payment.sender.publicKey().stellarAddress(),
+            destination: payment.destination.stellarAddress(),
+            asset,
+            amount,
         });
 
         const result = await this.signAndSubmit(signers, [op], memo, invoiceList);
@@ -355,19 +408,30 @@ export class Client {
         }
 
         const ops: xdr.Operation[] = [];
+
+        let asset: Asset;
+        let quarksConversion: number;
+        if (this.kinVersion === 2) {
+            asset = new Asset(KinAssetCode, this.issuer);
+            quarksConversion = 1e5;
+        } else {
+            asset = Asset.native();
+            // In Kin, the base currency has been 'scaled' by
+            // a factor of 100 from stellar. That is, 1 Kin is 100x
+            // 1 XLM, and the minimum amount is 1e-5 instead of 1e-7.
+            //
+            // Since js-stellar's amount here is an XLM (equivalent to Kin),
+            // we need to convert it to a quark (divide by 1e5), and then also
+            // account for the 100x scaling factor. 1e5 / 100 = 1e7.
+            quarksConversion = 1e7;
+        }
+
         for (const e of batch.earns) {
             ops.push(Operation.payment({
                 source: batch.sender.publicKey().stellarAddress(),
                 destination: e.destination.stellarAddress(),
-                asset: Asset.native(),
-                // In Kin, the base currency has been 'scaled' by
-                // a factor of 100 from stellar. That is, 1 Kin is 100x
-                // 1 XLM, and the minimum amount is 1e-5 instead of 1e-7.
-                //
-                // Since js-stellar's amount here is in XLM (equivalent to Kin),
-                // we need to convert it to a quark (divide by 1e5), and then also
-                // account for the 100x scaling factor. 1e5 / 100 = 1e7.
-                amount: e.quarks.dividedBy(1e7).toFixed(7),
+                asset,
+                amount: e.quarks.dividedBy(quarksConversion).toFixed(7),
             }));
         }
 

@@ -12,7 +12,7 @@ import {
     Environment,
     ReadOnlyPayment,
     paymentsFromEnvelope,
- }  from "..";
+}  from "..";
 
 
 export const AGORA_HMAC_HEADER = "X-Agora-HMAC-SHA256".toLowerCase();
@@ -64,14 +64,17 @@ export class SignTransactionRequest {
     envelope:     xdr.TransactionEnvelope
 
     networkPassphrase: string
+    kinVersion: number
 
-    constructor(envelope: xdr.TransactionEnvelope, payments: ReadOnlyPayment[], networkPassphrase: string, userId?: string, userPassKey?: string) {
+    constructor(envelope: xdr.TransactionEnvelope, payments: ReadOnlyPayment[], networkPassphrase: string, kinVersion: number, userId?: string, userPassKey?: string) {
         this.userId = userId;
-        this.userPassKey = userPassKey
-        this.payments = payments,
+        this.userPassKey = userPassKey;
+        this.payments = payments;
 
         this.envelope = envelope;
         this.networkPassphrase = networkPassphrase;
+
+        this.kinVersion = kinVersion;
     }
 
     txHash(): Buffer {
@@ -79,6 +82,7 @@ export class SignTransactionRequest {
     }
 
 }
+
 export class SignTransactionResponse {
     rejected: boolean;
     envelope: xdr.TransactionEnvelope;
@@ -102,21 +106,25 @@ export class SignTransactionResponse {
         builder.sign(key.kp);
         this.signedEnvelope = builder.toEnvelope();
     }
+
     reject(): void {
         this.rejected = true;
     }
+
     markAlreadyPaid(idx: number): void {
         this.invoiceErrors.push({
             operation_index: idx,
             reason: RejectionReason.AlreadyPaid,
         });
     }
+
     markWrongDestination(idx: number): void {
         this.invoiceErrors.push({
             operation_index: idx,
             reason: RejectionReason.WrongDestination,
         });
     }
+
     markSkuNotFound(idx: number): void {
         this.invoiceErrors.push({
             operation_index: idx,
@@ -168,6 +176,7 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
             interface requestBody {
                 envelope_xdr: string
                 invoice_list: string
+                kin_version: number
             }
 
             const reqBody = <requestBody>req.body;
@@ -191,9 +200,10 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
                 invoiceList = InvoiceList.deserializeBinary(Buffer.from(reqBody.invoice_list, "base64"));
             }
 
+            const kinVersion = (reqBody.kin_version ? reqBody.kin_version : 3);
             const envelope = xdr.TransactionEnvelope.fromXDR(Buffer.from(reqBody.envelope_xdr, "base64"));
-            const payments = paymentsFromEnvelope(envelope, TransactionType.Spend, invoiceList);
-            signRequest = new SignTransactionRequest(envelope, payments, networkPassphrase, userId, userPassKey);
+            const payments = paymentsFromEnvelope(envelope, TransactionType.Spend, invoiceList, kinVersion);
+            signRequest = new SignTransactionRequest(envelope, payments, networkPassphrase, kinVersion, userId, userPassKey);
             signResponse = new SignTransactionResponse(envelope, networkPassphrase)
         } catch (err) {
             resp.sendStatus(400);
