@@ -19,7 +19,7 @@ import {
 import {errorsFromXdr, AccountDoesNotExist, AccountExists, TransactionRejected} from "../errors"
 import {ShouldRetry, retryAsync, limit} from "../retry";
 
-export const SDK_VERSION = "0.2.1";
+export const SDK_VERSION = "0.2.2";
 export const USER_AGENT_HEADER = "kin-user-agent";
 export const USER_AGENT = `KinSDK/${SDK_VERSION} node/${process.version}`;
 
