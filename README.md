@@ -27,14 +27,14 @@ The main component of this library is the `Client` class, which facilitates acce
 At a minimum, the client needs to be instantiated with an `Environment`.
 
 ```typescript
-import {Client, Environment} from "@kinecosystem/kin-node";
+import {Client, Environment} from "@kinecosystem/kin-sdk-v2";
 const client = new Client(Environment.Test);
 ```
 
 Apps with [registered](https://docs.kin.org/app-registration) app indexes should initialize the client with their index:
 
 ```typescript
-import {Client, Environment} from "@kinecosystem/kin-node";
+import {Client, Environment} from "@kinecosystem/kin-sdk-v2";
 const client = new Client(Environment.Test, {
     appIndex: 1
 });
@@ -153,7 +153,7 @@ To consume events from Agora:
 
 ```typescript
 import { express, json } from "express";
-import { Event, EventsHandler } from "@kinecosystem/kin-node/webhook";
+import { Event, EventsHandler } from "@kinecosystem/kin-sdk-v2/webhook";
 
 // Note: if no secret is provided to the handler, all requests will be processed.
 //       otherwise, the request signature will be validated to ensure it came from agora.
@@ -179,7 +179,7 @@ import {
     SignTransactionRequest,
     SignTransactionResponse,
     SignTransactionHandler,
-} from "@kinecosystem/kin-node/webhook";
+} from "@kinecosystem/kin-sdk-v2/webhook";
 
 // Note: if no secret is provided to the handler, all requests will be processed.
 //       otherwise, the request signature will be validated to ensure it came from agora.
