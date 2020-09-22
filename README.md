@@ -15,6 +15,15 @@ npm install @kinecosystem/kin-sdk-v2
 yarn add @kinecosystem/kin-sdk-v2
 ```
 
+Note: `stellar-base` uses `tweetnacl` and `sodium-native` as dependencies. If `sodium-native` cannot be built,
+or is absent, `stellar-base` falls back to the slower `tweetnacl`. There are certain cases where `sodium-native`
+may have issues. Notably:
+
+1. Browser environments
+2. Serverless functions with tight package sizing. For example, AWS Lambda has a 50 MiB limit, and `sodium-native`
+takes up a majority of this space. Developers may wish to delete the `sodium_native` directory in `node_modules/`
+to save space.
+
 ## Overview
 The SDK contains two main components: the `Client` and webhook handlers. The `Client` is used for blockchain
 actions, such as creating accounts sending payments, while the web hook handlers are meant for developers who wish to make
