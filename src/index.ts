@@ -156,7 +156,6 @@ export interface ReadOnlyPayment {
 }
 
 export function paymentsFromEnvelope(envelope: xdr.TransactionEnvelope, type: TransactionType, invoiceList?: commonpb.InvoiceList, kinVersion?: number): ReadOnlyPayment[] {
-    console.log("kin version: " + kinVersion)
     const payments: ReadOnlyPayment[] = [];
 
     if (!kinVersion) {

@@ -72,8 +72,8 @@ export class Client {
     maxNonceRetries:   number
     appIndex?:         number
     whitelistKey?:     PrivateKey
-    kinVersion: number
-    issuer?: string
+    kinVersion:        number
+    issuer?:           string
 
     constructor(env: Environment, conf?: ClientConfig) {
         if (conf?.endpoint) {
@@ -236,10 +236,10 @@ export class Client {
         }
 
         let asset: Asset;
-        let amount: string;
+        let quarksConversion: number;
         if (this.kinVersion === 2) {
             asset = new Asset(KinAssetCode, this.issuer);
-            amount = payment.quarks.dividedBy(1e5).toFixed(7);
+            quarksConversion = 1e5;
         } else {
             asset = Asset.native();
             // In Kin, the base currency has been 'scaled' by
@@ -249,14 +249,14 @@ export class Client {
             // Since js-stellar's amount here is an XLM (equivalent to Kin),
             // we need to convert it to a quark (divide by 1e5), and then also
             // account for the 100x scaling factor. 1e5 / 100 = 1e7.
-            amount = payment.quarks.dividedBy(1e7).toFixed(7);
+            quarksConversion = 1e7;
         }
 
         const op = Operation.payment({
             source: payment.sender.publicKey().stellarAddress(),
             destination: payment.destination.stellarAddress(),
-            asset,
-            amount,
+            asset: asset,
+            amount: payment.quarks.dividedBy(quarksConversion).toFixed(7),
         });
 
         const result = await this.signAndSubmit(signers, [op], memo, invoiceList);
@@ -430,7 +430,7 @@ export class Client {
             ops.push(Operation.payment({
                 source: batch.sender.publicKey().stellarAddress(),
                 destination: e.destination.stellarAddress(),
-                asset,
+                asset: asset,
                 amount: e.quarks.dividedBy(quarksConversion).toFixed(7),
             }));
         }

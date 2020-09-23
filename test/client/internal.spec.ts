@@ -21,7 +21,7 @@ import {
     invoiceToProto,
  } from "../../src";
 
-function validateHeaders(md: grpc.Metadata, expectedVersion: string): grpc.ServiceError | undefined{
+function validateHeaders(md: grpc.Metadata, expectedVersion: string): grpc.ServiceError | undefined {
     const mdMap = md.getMap();
     if (mdMap[USER_AGENT_HEADER] !== USER_AGENT) {
         return {
