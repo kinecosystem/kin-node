@@ -133,7 +133,7 @@ export class Memo {
 
     // ForeignKey returns an identifier in an auxiliary service that contains
     // additional information related to the transaction.
-    ForeginKey(): Buffer {
+    ForeignKey(): Buffer {
         const fk = Buffer.alloc(29)
 
         for (let i = 0; i < 28; i++) {

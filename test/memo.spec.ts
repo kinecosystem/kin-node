@@ -18,7 +18,7 @@ test('TestMemo_Valid', () => {
         expect(m.Version()).toBe(v)
         expect(m.TransactionType()).toBe(TransactionType.Spend)
         expect(m.AppIndex()).toBe(1)
-        expect(emptyFK.equals(m.ForeginKey())).toBe(true)
+        expect(emptyFK.equals(m.ForeignKey())).toBe(true)
     }
 
     for (let t = TransactionType.None; t < MAX_TRANSACTION_TYPE; t++) {
@@ -27,7 +27,7 @@ test('TestMemo_Valid', () => {
         expect(m.Version()).toBe(1)
         expect(m.TransactionType()).toBe(t)
         expect(m.AppIndex()).toBe(1)
-        expect(emptyFK.equals(m.ForeginKey())).toBe(true)
+        expect(emptyFK.equals(m.ForeignKey())).toBe(true)
     }
 
     // We increment by 0xf instead of 1 since iterating over the total space
@@ -38,14 +38,14 @@ test('TestMemo_Valid', () => {
         expect(m.Version()).toBe(1)
         expect(m.TransactionType()).toBe(TransactionType.Spend)
         expect(m.AppIndex()).toBe(i)
-        expect(emptyFK.equals(m.ForeginKey())).toBe(true)
+        expect(emptyFK.equals(m.ForeignKey())).toBe(true)
     }
 
     // Test a short foreign key
     const fk = Buffer.alloc(29)
     fk[0] = 1
     const m = Memo.new(1, TransactionType.Earn, 2, fk)
-    expect(fk.equals(m.ForeginKey())).toBe(true)
+    expect(fk.equals(m.ForeignKey())).toBe(true)
 
     // Test range of foreign keys
     for (let i = 0; i < 256; i += 29) {
@@ -55,12 +55,12 @@ test('TestMemo_Valid', () => {
 
         const m = Memo.new(1, TransactionType.Earn, 2, fk)
         for (let j = 0; j < 28; j++) {
-            expect(fk[j]).toBe(m.ForeginKey()[j])
+            expect(fk[j]).toBe(m.ForeignKey()[j])
         }
 
         // Note: because we only have 230 bits, the last byte in the memo fk
         // only has the first 6 bits of the last byte in the original fk.
-        expect(fk[28]&0x3f).toBe(m.ForeginKey()[28])
+        expect(fk[28]&0x3f).toBe(m.ForeignKey()[28])
     }
 })
 
