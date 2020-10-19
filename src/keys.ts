@@ -1,4 +1,6 @@
 import {StrKey, Keypair} from "stellar-base"
+import {PublicKey as SolanaPublicKey} from "@solana/web3.js"
+
 
 // PublicKey is a blockchain agnostic representation
 // of an ed25519 public key.
@@ -27,6 +29,10 @@ export class PublicKey {
 
     equals(other: PublicKey): boolean {
         return this.buffer.equals(other.buffer);
+    }
+
+    solanaKey(): SolanaPublicKey {
+        return new SolanaPublicKey(this.buffer)
     }
 }
 
