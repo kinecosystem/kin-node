@@ -22,6 +22,7 @@ import {
     PrivateKey,
  } from "../../src";
 import { TokenProgram } from "../../src/solana/token-program";
+import base58 from "bs58";
 
 const WEBHOOK_SECRET = "super_secret";
 
@@ -79,7 +80,7 @@ test("hmac header validation", async () => {
     const signRequest = {
         // stolen from a Go test
         envelope_xdr: "AAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAADAp4yjwgs7DQ5hMiUyMqzpC22u6NWTXaX85D4qbzTj9wAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAALpctlQBhbHSdXACe6mk64mbrrl6DjRI5U7eAy2I3TUTAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAlbaWfZsuwTJg+gyJYp8vcDTwNWazt4rt+0K8TMkW374AAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAAA6KpnKS3rx9Vyqcj1oVWUHHXo9Tnf9t0ComjOg7C26AwAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAAGhVkpXOey36N862ZAPRVa2MAUJt93b4DRjarjSn9mZUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAA6BljUXmxqUtHbyBqIF09xdgf115SP4FbwFg+49en2IoAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAABqBXeFh+UFtWbGv2hJ2jLYEQsfTY3aeE16LkP0S1P0MgAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAACFDsaY8xZjoFL3U9TZYdOdcAHOYD78JI/a9dY95sGNUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAS8TkraTWvQD38UQZcDqEWKX7UPlUlQGwsZfKQ9O2KPIAAAAAAAAAAAAAAAoAAAAAAAAAAA==",
-    }
+    };
 
     await request(app)
         .post("/sign_transaction")
@@ -92,7 +93,7 @@ test("hmac header validation", async () => {
 test("invalid requests", async () => {
     const garbage = {
         hello: "world"
-    }
+    };
 
     await request(app)
         .post("/events")
@@ -110,35 +111,56 @@ test("invalid requests", async () => {
 
     const garbageEnvelope = {
         envelope_xdr: "notproperbase64",
-    }
+    };
     await request(app)
         .post("/sign_transaction")
         .set('Accept', 'application/json')
         .set(AGORA_HMAC_HEADER, getHmacHeader(garbageEnvelope))
         .send(garbageEnvelope)
         .expect(400);
-})
+});
 
 test("eventsHandler", async () => {
     const app = express();
     let received = new Array<Event>();
 
-    app.use("/events", express.json())
+    app.use("/events", express.json());
     app.use("/events", EventsHandler((events: Event[]) => {
-        received = events
-    }))
+        received = events;
+    }));
 
-    let sent: Event[] = [
+    const sent: Event[] = [
         {
             transaction_event: {
-                kin_version: 1,
+                kin_version: 3,
                 tx_hash: Buffer.from('1eb4acda0b10c275f2fb14f891772a957634f1205b908be10ba2ed68bdcc68f3', 'hex').toString('base64'),
             }
         },
         {
             transaction_event: {
-                kin_version: 1,
+                kin_version: 3,
                 tx_hash: Buffer.from('81f382dd636281ebe295fd49fe7b729f7da7ab0e6c561ec116d438d67c332999', 'hex').toString('base64'),
+                stellar_event: {
+                    envelope_xdr: 'AAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAADAp4yjwgs7DQ5hMiUyMqzpC22u6NWTXaX85D4qbzTj9wAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAALpctlQBhbHSdXACe6mk64mbrrl6DjRI5U7eAy2I3TUTAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAlbaWfZsuwTJg+gyJYp8vcDTwNWazt4rt+0K8TMkW374AAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAAA6KpnKS3rx9Vyqcj1oVWUHHXo9Tnf9t0ComjOg7C26AwAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAAGhVkpXOey36N862ZAPRVa2MAUJt93b4DRjarjSn9mZUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAA6BljUXmxqUtHbyBqIF09xdgf115SP4FbwFg+49en2IoAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAABqBXeFh+UFtWbGv2hJ2jLYEQsfTY3aeE16LkP0S1P0MgAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAACFDsaY8xZjoFL3U9TZYdOdcAHOYD78JI/a9dY95sGNUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAS8TkraTWvQD38UQZcDqEWKX7UPlUlQGwsZfKQ9O2KPIAAAAAAAAAAAAAAAoAAAAAAAAAAA==',
+                    result_xdr: 'AAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAA=',
+                }
+            }
+        },
+        {
+            transaction_event: {
+                kin_version: 4,
+                tx_id: Buffer.from(base58.decode('2nBhEBYYvfaAe16UMNqRHre4YNSskvuYgx3M6E4JP1oDYvZEJHvoPzyUidNgNX5r9sTyN1J9UxtbCXy2rqYcuyuv')).toString('base64'),
+            }
+        },
+        {
+            transaction_event: {
+                kin_version: 4,
+                tx_id: Buffer.from(base58.decode('2nBhEBYYvfaAe16UMNqRHre4YNSskvuYgx3M6E4JP1oDYvZEJHvoPzyUidNgNX5r9sTyN1J9UxtbCXy2rqYcuyuv')).toString('base64'),
+                solana_event: {
+                    transaction: 'AVj7dxHlQ9IrvdYVIjuiRFs1jLaDMHixgrv+qtHBwz51L4/ImLZhszwiyEJDIp7xeBSpm/TX5B7mYzxa+fPOMw0BAAMFJMJVqLw+hJYheizSoYlLm53KzgT82cDVmazarqQKG2GQsLgiqktA+a+FDR4/7xnDX7rsusMwryYVUdixfz1B1Qan1RcZLwqvxvJl4/t3zHragsUp0L47E24tAFUgAAAABqfVFxjHdMkoVmOYaR1etoteuKObS21cc1VbIQAAAAAHYUgdNXR0u3xNdiTr072z2DVec9EQQ/wNo1OAAAAAAAtxOUhPBp2WSjUNJEgfvy70BbxI00fZyEPvFHNfxrtEAQQEAQIDADUCAAAAAQAAAAAAAACtAQAAAAAAAAdUE18R96XTJCe+YfRfUp6WP+YKCy/72ucOL8AoBFSpAA==',
+                    tx_error: 'none',
+                    tx_error_raw: 'rawerror',
+                }
             }
         },
     ];
@@ -148,8 +170,13 @@ test("eventsHandler", async () => {
         .send(sent)
         .expect(200);
 
+    expect(received[0].transaction_event.tx_id).toEqual(received[0].transaction_event.tx_hash);
+    expect(received[1].transaction_event.tx_id).toEqual(received[1].transaction_event.tx_hash);
+    delete received[0].transaction_event.tx_id;
+    delete received[1].transaction_event.tx_id;
+    
     expect(received).toStrictEqual(sent);
-})
+});
 
 test("signtransactionHandler", async () => {
     const app = express();
@@ -174,11 +201,11 @@ test("signtransactionHandler", async () => {
     let envelope = xdr.TransactionEnvelope.fromXDR("AAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAADAp4yjwgs7DQ5hMiUyMqzpC22u6NWTXaX85D4qbzTj9wAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAALpctlQBhbHSdXACe6mk64mbrrl6DjRI5U7eAy2I3TUTAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAlbaWfZsuwTJg+gyJYp8vcDTwNWazt4rt+0K8TMkW374AAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAAA6KpnKS3rx9Vyqcj1oVWUHHXo9Tnf9t0ComjOg7C26AwAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAAGhVkpXOey36N862ZAPRVa2MAUJt93b4DRjarjSn9mZUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAA6BljUXmxqUtHbyBqIF09xdgf115SP4FbwFg+49en2IoAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAABqBXeFh+UFtWbGv2hJ2jLYEQsfTY3aeE16LkP0S1P0MgAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAACFDsaY8xZjoFL3U9TZYdOdcAHOYD78JI/a9dY95sGNUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAS8TkraTWvQD38UQZcDqEWKX7UPlUlQGwsZfKQ9O2KPIAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64") ;
     const builder = TransactionBuilder.fromXDR(envelope, NetworkPasshrase.Test);
     builder.sign(localKeypair.kp);
-    envelope = builder.toEnvelope()
+    envelope = builder.toEnvelope();
 
     const req = {
         envelope_xdr: envelope.toXDR("base64"),
-    }
+    };
     let resp = await request(app)
         .post("/sign_transaction")
         .set('Accept', 'application/json')
@@ -204,7 +231,7 @@ test("signtransactionHandler", async () => {
     expect(returnedEnvelope.v0().signatures()).toHaveLength(2);
     expect(actualUserId).toBe("user_id");
     expect(actualUserPasskey).toBe("user_pass_key");
-})
+});
 
 test("signTransactionHandler rejection", async () => {
     const app = express();
@@ -217,20 +244,20 @@ test("signTransactionHandler rejection", async () => {
 
     app.use("/sign_transaction", express.json());
     app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: SignTransactionRequest, resp: SignTransactionResponse) => {
-        resp.markSkuNotFound(0)
-        resp.markWrongDestination(1)
-        resp.markAlreadyPaid(2)
+        resp.markSkuNotFound(0);
+        resp.markWrongDestination(1);
+        resp.markAlreadyPaid(2);
     }));
 
     let envelope = xdr.TransactionEnvelope.fromXDR("AAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAADAp4yjwgs7DQ5hMiUyMqzpC22u6NWTXaX85D4qbzTj9wAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAALpctlQBhbHSdXACe6mk64mbrrl6DjRI5U7eAy2I3TUTAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAlbaWfZsuwTJg+gyJYp8vcDTwNWazt4rt+0K8TMkW374AAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAAA6KpnKS3rx9Vyqcj1oVWUHHXo9Tnf9t0ComjOg7C26AwAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAAGhVkpXOey36N862ZAPRVa2MAUJt93b4DRjarjSn9mZUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAA6BljUXmxqUtHbyBqIF09xdgf115SP4FbwFg+49en2IoAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAABqBXeFh+UFtWbGv2hJ2jLYEQsfTY3aeE16LkP0S1P0MgAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAACFDsaY8xZjoFL3U9TZYdOdcAHOYD78JI/a9dY95sGNUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAS8TkraTWvQD38UQZcDqEWKX7UPlUlQGwsZfKQ9O2KPIAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64") ;
     const builder = TransactionBuilder.fromXDR(envelope, NetworkPasshrase.Test);
     builder.sign(localKeypair.kp);
-    envelope = builder.toEnvelope()
+    envelope = builder.toEnvelope();
 
     const req = {
         envelope_xdr: envelope.toXDR("base64"),
         invoice_list: "CggKBgoEdGVzdAoKCggKBHRlc3QYAQoKCggKBHRlc3QYAgoKCggKBHRlc3QYAwoKCggKBHRlc3QYBAoKCggKBHRlc3QYBQoKCggKBHRlc3QYBgoKCggKBHRlc3QYBwoKCggKBHRlc3QYCAoKCggKBHRlc3QYCQ==",
-    }
+    };
     const resp = await request(app)
         .post("/sign_transaction")
         .set('Accept', 'application/json')
@@ -244,14 +271,14 @@ test("signTransactionHandler rejection", async () => {
         RejectionReason.SkuNotFound,
         RejectionReason.WrongDestination,
         RejectionReason.AlreadyPaid,
-    ]
+    ];
     const invoiceErrors = (<signResponse>resp.body).invoice_errors;
     expect(invoiceErrors).toHaveLength(3);
     for (let i = 0; i < 3; i++) {
         expect(invoiceErrors[i].operation_index).toBe(i);
         expect(invoiceErrors[i].reason).toBe(expectedReasons[i]);
     }
-})
+});
 
 test("signtransactionHandler Kin 4", async () => {
     const app = express();

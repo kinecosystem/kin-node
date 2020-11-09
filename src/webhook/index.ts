@@ -23,14 +23,23 @@ export const AGORA_USER_PASSKEY_HEADER = "X-Agora-User-Passkey".toLowerCase();
 
 export interface Event {
     transaction_event: {
-        kin_version:   number,
-        tx_hash:       string,
+        kin_version: number,
+        tx_id?: string,
+        /**
+         * @deprecated - Use `tx_id` instead.
+         */
+        tx_hash?: string,
         invoice_list?: commonpb.InvoiceList,
 
         stellar_event?: {
             envelope_xdr: string
-            result_xdr:   string
+            result_xdr: string
         },
+        solana_event?: {
+            transaction: string,
+            tx_error?: string,
+            tx_error_raw?: string 
+        }
     }
 }
 
@@ -49,6 +58,11 @@ export function EventsHandler(callback: (events: Event[]) => void, secret?: stri
                 resp.sendStatus(400);
                 return;
             }
+            events.forEach(event => {
+                if (!event.transaction_event.tx_id && event.transaction_event.tx_hash) {
+                    event.transaction_event.tx_id = event.transaction_event.tx_hash;
+                }
+            });
 
             callback(events);
             resp.sendStatus(200);

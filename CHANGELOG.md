@@ -7,6 +7,7 @@
 - Add optional `commitment` parameter to `Client` methods (`createAccount`, `getBalance`, `getTransaction`, `submitPayment`, `submitEarnBatch`)
 - Add optional `subsidizer` parameter to `Client.create_account`, `Payment`, and `EarnBatch`
 - Add optional `senderResolution` and `destinationResolution` parameters to `Client.submitPayment` and `Client.submitEarnBatch`
+- Mark `tx_hash` property in `Event` as deprecated.
 
 ## [0.2.3](https://github.com/kinecosystem/kin-node/releases/tag/0.2.3)
 - Add Kin 2 support
