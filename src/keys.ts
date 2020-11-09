@@ -1,11 +1,12 @@
-import {StrKey, Keypair} from "stellar-base"
-import {PublicKey as SolanaPublicKey} from "@solana/web3.js"
+import {StrKey, Keypair} from "stellar-base";
+import {PublicKey as SolanaPublicKey} from "@solana/web3.js";
+import bs58 from 'bs58';
 
 
 // PublicKey is a blockchain agnostic representation
 // of an ed25519 public key.
 export class PublicKey {
-    buffer: Buffer
+    buffer: Buffer;
 
     constructor(b: Buffer) {
         this.buffer = b;
@@ -20,11 +21,28 @@ export class PublicKey {
             return new PublicKey(StrKey.decodeEd25519PublicKey(address));
         }
 
+        const decoded58 = bs58.decode(address);
+        if (decoded58.length == 32) {
+            return new PublicKey(decoded58);
+        }
+
         throw new Error("address is not a public key");
+    }
+
+    static fromBase58(address: string): PublicKey {
+        const decoded58 = bs58.decode(address);
+        if (decoded58.length == 32) {
+            return new PublicKey(decoded58);
+        }
+
+        throw new Error("address is not a base58-encoded public key");
     }
 
     stellarAddress(): string {
         return StrKey.encodeEd25519PublicKey(this.buffer);
+    }
+    toBase58(): string {
+        return bs58.encode(this.buffer);
     }
 
     equals(other: PublicKey): boolean {
@@ -32,14 +50,14 @@ export class PublicKey {
     }
 
     solanaKey(): SolanaPublicKey {
-        return new SolanaPublicKey(this.buffer)
+        return new SolanaPublicKey(this.buffer);
     }
 }
 
 // PrivateKey is a blockchain agnostic representation of an
 // ed25519 private key.
 export class PrivateKey {
-    kp: Keypair
+    kp: Keypair;
 
     constructor(kp: Keypair) {
         this.kp = kp;
@@ -63,6 +81,9 @@ export class PrivateKey {
     }
     stellarSeed(): string {
         return this.kp.secret();
+    }
+    secretKey(): Buffer {
+        return Buffer.concat([this.kp.rawSecretKey(), this.kp.rawPublicKey()]);
     }
 
     equals(other: PrivateKey): boolean {

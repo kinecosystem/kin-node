@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { hmac, sha256 } from "hash.js";
 import { Keypair, xdr, TransactionBuilder } from "stellar-base";
+import { Transaction as SolanaTransaction } from "@solana/web3.js";
 
 import {
     Event,
@@ -20,14 +21,15 @@ import {
     NetworkPasshrase,
     PrivateKey,
  } from "../../src";
+import { TokenProgram } from "../../src/solana/token-program";
 
 const WEBHOOK_SECRET = "super_secret";
 
 const app = express();
-app.use("/events", express.json())
+app.use("/events", express.json());
 app.use("/events", EventsHandler((events: Event[]) => {}, WEBHOOK_SECRET));
 
-app.use("/sign_transaction", express.json())
+app.use("/sign_transaction", express.json());
 app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: SignTransactionRequest, resp: SignTransactionResponse) => {
 }, WEBHOOK_SECRET));
 
@@ -250,3 +252,126 @@ test("signTransactionHandler rejection", async () => {
         expect(invoiceErrors[i].reason).toBe(expectedReasons[i]);
     }
 })
+
+test("signtransactionHandler Kin 4", async () => {
+    const app = express();
+    const serverKeypair = PrivateKey.random();
+
+    interface signResponse {
+        envelope_xdr: string
+    }
+    
+    const sender = PrivateKey.random().publicKey();
+    const destination = PrivateKey.random().publicKey();
+    const recentBlockhash = PrivateKey.random().publicKey();
+    const tokenProgram = PrivateKey.random().publicKey();
+    
+    let actualUserId: string | undefined;
+    let actualUserPasskey: string | undefined;
+
+    app.use("/sign_transaction", express.json());
+    app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: SignTransactionRequest, resp: SignTransactionResponse) => {
+        actualUserId = req.userId;
+        actualUserPasskey = req.userPassKey;
+    }, WEBHOOK_SECRET));
+
+    const transaction = new SolanaTransaction({ 
+        feePayer: sender.solanaKey(),
+        recentBlockhash: recentBlockhash.toBase58(),
+    }).add(
+        TokenProgram.transfer({
+            source: sender.solanaKey(),
+            dest: destination.solanaKey(),
+            owner: sender.solanaKey(),
+            amount: BigInt(100),
+        }, tokenProgram.solanaKey(),
+    ));
+
+    const req = {
+        transaction: transaction.serialize({
+            verifySignatures: false,
+            requireAllSignatures: false,
+        }).toString("base64"),
+        kin_version: 4,
+    };
+
+    const resp = await request(app)
+        .post("/sign_transaction")
+        .set('Accept', 'application/json')
+        .set(AGORA_HMAC_HEADER, getHmacHeader(req))
+        .set(AGORA_USER_ID_HEADER, "user_id")
+        .set(AGORA_USER_PASSKEY_HEADER, "user_pass_key")
+        .send(req)
+        .expect(200);
+
+    expect((<signResponse>resp.body).envelope_xdr).toBeUndefined();
+    expect(actualUserId).toBe("user_id");
+    expect(actualUserPasskey).toBe("user_pass_key");
+});
+
+test("signTransactionHandler rejection Kin 4", async () => {
+    const app = express();
+
+    interface signResponse {
+        envelope_xdr:   string
+        invoice_errors: InvoiceError[]
+    }
+
+    const sender = PrivateKey.random().publicKey();
+    const destination = PrivateKey.random().publicKey();
+    const recentBlockhash = PrivateKey.random().publicKey();
+    const tokenProgram = PrivateKey.random().publicKey();
+
+    app.use("/sign_transaction", express.json());
+    app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: SignTransactionRequest, resp: SignTransactionResponse) => {
+        resp.markSkuNotFound(0);
+        resp.markWrongDestination(1);
+        resp.markAlreadyPaid(2);
+    }));
+
+    const transaction = new SolanaTransaction({ 
+        feePayer: sender.solanaKey(),
+        recentBlockhash: recentBlockhash.toBase58(),
+    });
+    // There are 10 invoices in the invoice list
+    for (let i = 0; i < 10; i++) {
+        transaction.add(
+            TokenProgram.transfer({
+                source: sender.solanaKey(),
+                dest: destination.solanaKey(),
+                owner: sender.solanaKey(),
+                amount: BigInt(100),
+            }, tokenProgram.solanaKey(),
+        ));
+    }
+
+    const req = {
+        transaction: transaction.serialize({
+            verifySignatures: false,
+            requireAllSignatures: false,
+        }).toString("base64"),
+        kin_version: 4,
+        invoice_list: "CggKBgoEdGVzdAoKCggKBHRlc3QYAQoKCggKBHRlc3QYAgoKCggKBHRlc3QYAwoKCggKBHRlc3QYBAoKCggKBHRlc3QYBQoKCggKBHRlc3QYBgoKCggKBHRlc3QYBwoKCggKBHRlc3QYCAoKCggKBHRlc3QYCQ==",
+    };
+
+    const resp = await request(app)
+        .post("/sign_transaction")
+        .set('Accept', 'application/json')
+        .set(AGORA_HMAC_HEADER, getHmacHeader(req))
+        .send(req)
+        .expect(403);
+
+    expect((<signResponse>resp.body).envelope_xdr).toBeUndefined();
+
+    const expectedReasons = [
+        RejectionReason.SkuNotFound,
+        RejectionReason.WrongDestination,
+        RejectionReason.AlreadyPaid,
+    ];
+    const invoiceErrors = (<signResponse>resp.body).invoice_errors;
+    expect(invoiceErrors).toHaveLength(3);
+    for (let i = 0; i < 3; i++) {
+        expect(invoiceErrors[i].operation_index).toBe(i);
+        expect(invoiceErrors[i].reason).toBe(expectedReasons[i]);
+    }
+});

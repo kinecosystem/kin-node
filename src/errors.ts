@@ -1,4 +1,6 @@
-import {xdr} from "stellar-base"
+import { xdr } from "stellar-base";
+import modelpb from "@kinecosystem/agora-api/node/common/v4/model_pb";
+import { InvoiceError } from "@kinecosystem/agora-api/node/common/v3/model_pb";
 
 // TransactionErrors contains the error details for a transaction.
 //
@@ -6,12 +8,36 @@ import {xdr} from "stellar-base"
 // OpErrors may or may not be set if TxErrors is set. If set, the length of
 // OpErrors will match the number of operations in the transaction.
 export class TransactionErrors {
-    TxError?:  Error
-    OpErrors?: Error[]
+    TxError?: Error;
+    OpErrors?: Error[];
+}
+
+export function errorsFromProto(protoError: modelpb.TransactionError): TransactionErrors {
+    const errors = new TransactionErrors();
+    switch (protoError.getReason()) {
+        case modelpb.TransactionError.Reason.NONE:
+            return errors;
+        case modelpb.TransactionError.Reason.UNAUTHORIZED:
+            errors.TxError = new InvalidSignature();
+            break;
+        case modelpb.TransactionError.Reason.BAD_NONCE:
+            errors.TxError = new BadNonce();
+            break;
+        case modelpb.TransactionError.Reason.INSUFFICIENT_FUNDS:
+            errors.TxError = new InsufficientBalance();
+            break;
+        case modelpb.TransactionError.Reason.INVALID_ACCOUNT:
+            errors.TxError = new AccountDoesNotExist();
+            break;
+        default:
+            errors.TxError = Error("unknown error reason: " + protoError.getReason());
+            break;
+    }
+    return errors;
 }
 
 export function errorsFromXdr(result: xdr.TransactionResult): TransactionErrors {
-    const errors = new TransactionErrors()
+    const errors = new TransactionErrors();
     switch (result.result().switch()) {
         case xdr.TransactionResultCode.txSuccess():
             return errors;
@@ -37,28 +63,28 @@ export function errorsFromXdr(result: xdr.TransactionResult): TransactionErrors 
             errors.TxError = new TransactionFailed();
             break;
         default:
-            errors.TxError = Error("unknown transaction result code: " + result.result().switch().value)
+            errors.TxError = Error("unknown transaction result code: " + result.result().switch().value);
             break;
     }
 
     if (result.result().switch() != xdr.TransactionResultCode.txFailed()) {
-        return errors
+        return errors;
     }
 
     errors.OpErrors = new Array<Error>(result.result().results().length);
     result.result().results().forEach((opResult, i) => {
         switch (opResult.switch()) {
             case xdr.OperationResultCode.opInner():
-                break
+                break;
             case xdr.OperationResultCode.opBadAuth():
                 errors.OpErrors![i] = new InvalidSignature();
-                return
+                return;
             case xdr.OperationResultCode.opNoAccount():
                 errors.OpErrors![i] = new SenderDoesNotExist();
-                return
+                return;
             default:
                 errors.OpErrors![i] = new Error("unknown operation result code: " + opResult.switch().value);
-                return
+                return;
         }
 
         switch (opResult.tr().switch()) {
@@ -82,23 +108,23 @@ export function errorsFromXdr(result: xdr.TransactionResult): TransactionErrors 
             case xdr.OperationType.payment():
                 switch (opResult.tr().paymentResult().switch()) {
                     case xdr.PaymentResultCode.paymentSuccess():
-                        break
+                        break;
                     case xdr.PaymentResultCode.paymentMalformed():
                     case xdr.PaymentResultCode.paymentNoTrust():
                     case xdr.PaymentResultCode.paymentSrcNoTrust():
                     case xdr.PaymentResultCode.paymentNoIssuer():
                         errors.OpErrors![i] = new Malformed();
-                        break
+                        break;
                     case xdr.PaymentResultCode.paymentUnderfunded():
                         errors.OpErrors![i] = new InsufficientBalance();
-                        break
+                        break;
                     case xdr.PaymentResultCode.paymentSrcNotAuthorized():
                     case xdr.PaymentResultCode.paymentNotAuthorized():
                         errors.OpErrors![i] = new InvalidSignature();
-                        break
+                        break;
                     case xdr.PaymentResultCode.paymentNoDestination():
                         errors.OpErrors![i] = new DestinationDoesNotExist();
-                        break
+                        break;
                     default:
                         errors.OpErrors![i] = new Error("unknown payment operation result code: " + opResult.switch().value);
                         break;
@@ -107,9 +133,9 @@ export function errorsFromXdr(result: xdr.TransactionResult): TransactionErrors 
             default:
                 errors.OpErrors![i] = new Error("unknown operation result at: " + i);
         }
-    })
+    });
 
-    return errors
+    return errors;
 }
 
 export class TransactionFailed extends Error {
@@ -220,3 +246,52 @@ export class TransactionRejected extends Error {
         Object.setPrototypeOf(this, TransactionRejected.prototype);
     }
 }
+
+export class PayerRequired extends Error {
+    constructor(m?: string) {
+        super(m);
+        this.name = "PayerRequired";
+        Object.setPrototypeOf(this, PayerRequired.prototype);
+    }
+}
+
+export class NoSubsidizerError extends Error {
+    constructor(m?: string) {
+        super(m);
+        this.name = "NoSubsidizerError";
+        Object.setPrototypeOf(this, NoSubsidizerError.prototype);
+    }
+}
+
+export class AlreadySubmitted extends Error {
+    constructor(m?: string) {
+        super(m);
+        this.name = "AlreadySubmittedError";
+        Object.setPrototypeOf(this, AlreadySubmitted.prototype);
+    }
+}
+
+export class NoTokenAccounts extends Error {
+    constructor(m?: string) {
+        super(m);
+        this.name = "NoTokenAccounts";
+        Object.setPrototypeOf(this, NoTokenAccounts.prototype);
+    }
+}
+
+// nonRetriableErrors contains the set of errors that should not be retried without modifications to the transaction.
+export const nonRetriableErrors = [
+    AccountExists,
+    Malformed,
+    SenderDoesNotExist,
+    DestinationDoesNotExist,
+    InsufficientBalance,
+    InsufficientFee,
+    TransactionRejected,
+    AlreadyPaid,
+    WrongDestination,
+    SkuNotFound,
+    BadNonce,
+    AlreadySubmitted,
+    NoTokenAccounts,
+];

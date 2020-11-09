@@ -1,36 +1,39 @@
-import { xdr } from "stellar-base"
-import { 
-    errorsFromXdr, 
-    Malformed, 
-    TransactionFailed, 
-    BadNonce, 
-    InvalidSignature, 
-    InsufficientBalance, 
-    SenderDoesNotExist, 
-    InsufficientFee, 
-    DestinationDoesNotExist, 
-    AccountExists 
+import { xdr } from "stellar-base";
+import modelpb from "@kinecosystem/agora-api/node/common/v4/model_pb";
+import {
+    errorsFromXdr,
+    Malformed,
+    TransactionFailed,
+    BadNonce,
+    InvalidSignature,
+    InsufficientBalance,
+    SenderDoesNotExist,
+    InsufficientFee,
+    DestinationDoesNotExist,
+    AccountExists,
+    AccountDoesNotExist,
+    errorsFromProto
 } from "../src/errors";
 
 test("parse no errors", () => {
     const resultResult = xdr.TransactionResultResult.txSuccess([
         xdr.OperationResult.opInner(xdr.OperationResultTr.payment(xdr.PaymentResult.paymentSuccess()))
     ]);
-    const result = new xdr.TransactionResult({ 
-        feeCharged: new xdr.Int64(0, 0), 
-        result: resultResult, 
+    const result = new xdr.TransactionResult({
+        feeCharged: new xdr.Int64(0, 0),
+        result: resultResult,
         ext: xdr.TransactionResultExt.fromXDR(Buffer.alloc(4)),
     });
 
     const errors = errorsFromXdr(result);
     expect(errors.TxError).toBeUndefined();
     expect(errors.OpErrors).toBeUndefined();
-})
+});
 
 test("unsupported transaction errors", () => {
     const testCases = [
         {
-           // "code": "TransactionResultCodeTxTooEarly"
+            // "code": "TransactionResultCodeTxTooEarly"
             xdr: "AAAAAAAAAAD////+AAAAAA==",
         },
         {
@@ -49,7 +52,7 @@ test("unsupported transaction errors", () => {
         expect(errorResult.TxError?.message).toContain("unknown transaction result code");
         expect(errorResult.OpErrors).toBeUndefined();
     }
-})
+});
 
 test("unsupported operation errors", () => {
     const testCases = [
@@ -69,7 +72,7 @@ test("unsupported operation errors", () => {
             // Inner -> AccountMerge::Malformed
             xdr: "AAAAAAAAAAD/////AAAAAQAAAAAAAAAI/////wAAAAA=",
         },
-    ]
+    ];
 
     for (const tc of testCases) {
         const result = xdr.TransactionResult.fromXDR(Buffer.from(tc.xdr, "base64"));
@@ -90,7 +93,7 @@ test("unsupported operation errors", () => {
         expect(errorResult.OpErrors![i].message).toContain("unknown");
         expect(errorResult.OpErrors![i].message).toContain("operation");
     }
-})
+});
 
 test("transaction errors", () => {
     const testCases = [
@@ -133,7 +136,7 @@ test("transaction errors", () => {
         expect(errorResult.TxError).toBeInstanceOf(tc.expected);
         expect(errorResult.OpErrors).toBeUndefined();
     }
-})
+});
 
 test("operation errors", () => {
     const xdrBytes = "AAAAAAAAAAD/////AAAADf/////////+AAAAAAAAAAD/////AAAAAAAAAAD////+AAAAAAAAAAD////8AAAAAAAAAAH/////AAAAAAAAAAH////+AAAAAAAAAAH////9AAAAAAAAAAH////8AAAAAAAAAAH////7AAAAAAAAAAH////6AAAAAAAAAAH////5AAAAAAAAAAEAAAAAAAAAAA==";
@@ -156,12 +159,49 @@ test("operation errors", () => {
         Malformed,
         InvalidSignature,
         // Last operation should not have an error.
-    ]
+    ];
 
     expect(errorResult.OpErrors).toHaveLength(expected.length + 1);
     for (let i = 0; i < expected.length; i++) {
         expect(errorResult.OpErrors![i]).toBeInstanceOf(expected[i]);
     }
 
-    expect(errorResult.OpErrors![expected.length+1]).toBeUndefined();
-})
+    expect(errorResult.OpErrors![expected.length + 1]).toBeUndefined();
+});
+
+test("errorsFromProto", () => {
+    const testCases = [
+        {
+            reason: modelpb.TransactionError.Reason.NONE,
+            expected: undefined,
+        },
+        {
+            reason: modelpb.TransactionError.Reason.UNAUTHORIZED,
+            expected: InvalidSignature,
+        },
+        {
+            reason: modelpb.TransactionError.Reason.BAD_NONCE,
+            expected: BadNonce,
+        },
+        {
+            reason: modelpb.TransactionError.Reason.INSUFFICIENT_FUNDS,
+            expected: InsufficientBalance,
+        },
+        {
+            reason: modelpb.TransactionError.Reason.INVALID_ACCOUNT,
+            expected: AccountDoesNotExist,
+        },
+    ];
+
+    testCases.forEach((tc) => {
+        const protoError = new modelpb.TransactionError();
+        protoError.setReason(tc.reason);
+        const errorResult = errorsFromProto(protoError);
+        if (tc.expected) {
+            expect(errorResult.TxError).toBeInstanceOf(tc.expected);
+        } else {
+            expect(errorResult.TxError).toBeUndefined();
+        }
+        expect(errorResult.OpErrors).toBeUndefined();
+    });
+});

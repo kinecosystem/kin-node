@@ -2,6 +2,7 @@ import http from "http";
 import express from "express";
 import { xdr, TransactionBuilder } from "stellar-base";
 import { hmac, sha256 } from "hash.js";
+import { Transaction as SolanaTransaction } from "@solana/web3.js";
 
 import commonpb, { InvoiceList } from "@kinecosystem/agora-api/node/common/v3/model_pb";
 
@@ -12,6 +13,7 @@ import {
     Environment,
     ReadOnlyPayment,
     paymentsFromEnvelope,
+    paymentsFromTransaction,
 }  from "..";
 
 
@@ -45,66 +47,75 @@ export function EventsHandler(callback: (events: Event[]) => void, secret?: stri
             const events = <Event[]>req.body;
             if (events.length == undefined || events.length == 0) {
                 resp.sendStatus(400);
-                return
+                return;
             }
 
             callback(events);
             resp.sendStatus(200);
         } catch (err) {
-            console.log(err)
+            console.log(err);
             resp.sendStatus(500);
         }
     };
 }
 
 export class SignTransactionRequest {
-    userId?:      string
-    userPassKey?: string
-    payments:     ReadOnlyPayment[]
-    envelope:     xdr.TransactionEnvelope
+    userId?:      string;
+    userPassKey?: string;
+    payments:     ReadOnlyPayment[];
+    envelope?:     xdr.TransactionEnvelope;
+    transaction?: SolanaTransaction;
 
-    networkPassphrase: string
-    kinVersion: number
+    networkPassphrase?: string;
+    kinVersion: number;
 
-    constructor(envelope: xdr.TransactionEnvelope, payments: ReadOnlyPayment[], networkPassphrase: string, kinVersion: number, userId?: string, userPassKey?: string) {
+    constructor(
+        payments: ReadOnlyPayment[], kinVersion: number, networkPassphrase?: string, envelope?: xdr.TransactionEnvelope, 
+        transaction?: SolanaTransaction, userId?: string, userPassKey?: string
+    ) {
         this.userId = userId;
         this.userPassKey = userPassKey;
         this.payments = payments;
 
         this.envelope = envelope;
+        this.transaction = transaction;
         this.networkPassphrase = networkPassphrase;
 
         this.kinVersion = kinVersion;
     }
 
     txHash(): Buffer {
-        return TransactionBuilder.fromXDR(this.envelope, this.networkPassphrase).hash();
+        if (!this.envelope || !this.networkPassphrase) {
+            throw new Error("this transaction has no hash");
+        }
+        return TransactionBuilder.fromXDR(this.envelope!, this.networkPassphrase!).hash();
     }
-
 }
 
 export class SignTransactionResponse {
     rejected: boolean;
-    envelope: xdr.TransactionEnvelope;
+    envelope?: xdr.TransactionEnvelope;
     signedEnvelope: xdr.TransactionEnvelope | undefined;
     invoiceErrors: InvoiceError[];
-    networkPassphrase: string;
+    networkPassphrase?: string;
 
-    constructor(envelope: xdr.TransactionEnvelope, networkPassphrase: string) {
+    constructor(envelope?: xdr.TransactionEnvelope, networkPassphrase?: string) {
         this.rejected = false;
-        this.envelope = envelope;
         this.invoiceErrors = [];
+        this.envelope = envelope;
         this.networkPassphrase = networkPassphrase;
     }
 
     isRejected(): boolean {
-        return this.rejected
+        return this.rejected;
     }
 
     sign(key: PrivateKey): void {
-        const builder = TransactionBuilder.fromXDR(this.envelope, this.networkPassphrase);
-        builder.sign(key.kp);
-        this.signedEnvelope = builder.toEnvelope();
+        if (this.envelope) {
+            const builder = TransactionBuilder.fromXDR(this.envelope!, this.networkPassphrase!);
+            builder.sign(key.kp);
+            this.signedEnvelope = builder.toEnvelope();
+        }
     }
 
     reject(): void {
@@ -112,6 +123,7 @@ export class SignTransactionResponse {
     }
 
     markAlreadyPaid(idx: number): void {
+        this.reject();
         this.invoiceErrors.push({
             operation_index: idx,
             reason: RejectionReason.AlreadyPaid,
@@ -119,6 +131,7 @@ export class SignTransactionResponse {
     }
 
     markWrongDestination(idx: number): void {
+        this.reject();
         this.invoiceErrors.push({
             operation_index: idx,
             reason: RejectionReason.WrongDestination,
@@ -126,6 +139,7 @@ export class SignTransactionResponse {
     }
 
     markSkuNotFound(idx: number): void {
+        this.reject();
         this.invoiceErrors.push({
             operation_index: idx,
             reason: RejectionReason.SkuNotFound,
@@ -141,8 +155,8 @@ export enum RejectionReason {
 }
 
 export class InvoiceError {
-    operation_index: number
-    reason:          RejectionReason
+    operation_index: number;
+    reason:          RejectionReason;
 
     constructor() {
         this.operation_index = 0;
@@ -151,7 +165,7 @@ export class InvoiceError {
 }
 
 export function SignTransactionHandler(env: Environment, callback: (req: SignTransactionRequest, resp: SignTransactionResponse) => void, secret?: string): express.RequestHandler<any> {
-    let networkPassphrase: string
+    let networkPassphrase: string;
     switch (env) {
         case Environment.Test:
             networkPassphrase = NetworkPasshrase.Test;
@@ -175,15 +189,12 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
         try {
             interface requestBody {
                 envelope_xdr: string
+                transaction: string
                 invoice_list: string
                 kin_version: number
             }
 
             const reqBody = <requestBody>req.body;
-            if (!reqBody.envelope_xdr || typeof reqBody.envelope_xdr != "string") {
-                resp.sendStatus(400)
-                return
-            }
 
             let userId: string | undefined;
             if (req.headers[AGORA_USER_ID_HEADER] && req.headers[AGORA_USER_ID_HEADER]!.length > 0) {
@@ -195,16 +206,34 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
                 userPassKey = <string>req.headers[AGORA_USER_PASSKEY_HEADER];
             }
 
-            let invoiceList: commonpb.InvoiceList | undefined
+            let invoiceList: commonpb.InvoiceList | undefined;
             if (reqBody.invoice_list) {
                 invoiceList = InvoiceList.deserializeBinary(Buffer.from(reqBody.invoice_list, "base64"));
             }
 
             const kinVersion = (reqBody.kin_version ? reqBody.kin_version : 3);
-            const envelope = xdr.TransactionEnvelope.fromXDR(Buffer.from(reqBody.envelope_xdr, "base64"));
-            const payments = paymentsFromEnvelope(envelope, TransactionType.Spend, invoiceList, kinVersion);
-            signRequest = new SignTransactionRequest(envelope, payments, networkPassphrase, kinVersion, userId, userPassKey);
-            signResponse = new SignTransactionResponse(envelope, networkPassphrase)
+            if (kinVersion === 4) {
+                if (!reqBody.transaction || typeof reqBody.transaction != "string") {
+                    resp.sendStatus(400);
+                    return;
+                }
+                
+                const txBytes = Buffer.from(reqBody.transaction, "base64");
+                const tx = SolanaTransaction.from(txBytes);
+                const payments = paymentsFromTransaction(tx, invoiceList);
+                signRequest = new SignTransactionRequest(payments, 4, undefined, undefined, tx, userId, userPassKey);
+                signResponse = new SignTransactionResponse();
+            } else {
+                if (!reqBody.envelope_xdr || typeof reqBody.envelope_xdr != "string") {
+                    resp.sendStatus(400);
+                    return;
+                }
+
+                const envelope = xdr.TransactionEnvelope.fromXDR(Buffer.from(reqBody.envelope_xdr, "base64"));
+                const payments = paymentsFromEnvelope(envelope, TransactionType.Spend, invoiceList, kinVersion);
+                signRequest = new SignTransactionRequest(payments, kinVersion, networkPassphrase, envelope, undefined, userId, userPassKey);
+                signResponse = new SignTransactionResponse(envelope, networkPassphrase);
+            }
         } catch (err) {
             resp.sendStatus(400);
             return;
@@ -212,17 +241,21 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
 
         try {
             callback(signRequest, signResponse);
-            if (signResponse.isRejected() || !signResponse.signedEnvelope) {
+            if (signResponse.isRejected() || (signResponse.envelope && !signResponse.signedEnvelope)) {
                 resp.status(403).send({
                     invoice_errors: signResponse.invoiceErrors,
                 });
             } else {
-                resp.status(200).send({
-                    envelope_xdr: signResponse.signedEnvelope!.toXDR("base64"),
-                })
+                if (signResponse.envelope) {
+                    resp.status(200).send({
+                        envelope_xdr: signResponse.signedEnvelope!.toXDR("base64"),
+                    });
+                } else {
+                    resp.status(200).send({});
+                }
             }
         } catch (err) {
-            console.log(err)
+            console.log(err);
             resp.sendStatus(500);
         }
     };
@@ -233,7 +266,7 @@ function verifySignature(headers: http.IncomingHttpHeaders, body: any, secret: s
         return false;
     }
 
-    const rawSecret = Buffer.from(secret, "utf-8")
+    const rawSecret = Buffer.from(secret, "utf-8");
     const actual = Buffer.from(<string>headers[AGORA_HMAC_HEADER]!, 'base64').toString('hex');
     const expected = hmac(<any>sha256, rawSecret).update(body).digest('hex');
     return actual == expected;
