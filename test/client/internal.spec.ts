@@ -19,7 +19,7 @@ import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transac
 import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
 
 import { InternalClient } from "../../src/client";
-import { USER_AGENT_HEADER, USER_AGENT, KIN_VERSION_HEADER } from "../../src/client/internal";
+import { USER_AGENT_HEADER, USER_AGENT, KIN_VERSION_HEADER, InternalClientConfig, DESIRED_KIN_VERSION_HEADER } from "../../src/client/internal";
 import { xdr } from "stellar-base";
 import { AccountDoesNotExist, AccountExists, AlreadySubmitted, BadNonce, InsufficientBalance, InvalidSignature, NoSubsidizerError, PayerRequired, TransactionRejected } from "../../src/errors";
 import {
@@ -69,7 +69,7 @@ interface TestEnv {
     txClientV4: transactiongrpcv4.TransactionClient
 }
 
-function newTestEnv(kinVersion: number): TestEnv {
+function newTestEnv(kinVersion: number, desiredKinVersion?: number): TestEnv {
     const accountClient = mock(accountgrpc.AccountClient);
     const txClient = mock(transactiongrpc.TransactionClient);
     const accountClientV4 = mock(accountgrpcv4.AccountClient);
@@ -84,6 +84,7 @@ function newTestEnv(kinVersion: number): TestEnv {
             airdropClientV4: instance(airdropClientV4),
             txClientV4: instance(txClientV4),
             kinVersion: kinVersion,
+            desiredKinVersion: desiredKinVersion,
         }),
         'accountClient': accountClient,
         'txClient': txClient,
@@ -173,6 +174,14 @@ function setGetMinBalanceResp(txClientV4: transactiongrpcv4.TransactionClient) {
             callback(undefined, resp);
         });
 }
+
+test('config desiredKinVersion', async() => {
+    const client = newTestEnv(3, 4).client;
+    const mdMap = client.metadata.getMap();
+    expect(mdMap[USER_AGENT_HEADER]).toEqual(USER_AGENT);
+    expect(mdMap[KIN_VERSION_HEADER]).toEqual("3");
+    expect(mdMap[DESIRED_KIN_VERSION_HEADER]).toEqual("4");
+});
 
 test('getBlockchainVersion', async () => {
     const env = newTestEnv(3);

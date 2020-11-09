@@ -60,6 +60,9 @@ export interface ClientConfig {
     whitelistKey?: PrivateKey
 
     kinVersion?: number
+    
+    // A debugging parameter to force Agora to use a minimum kin version.
+    desiredKinVersion?: number
 
     // The default commitment to use for Solana requests. Only relevant for Kin 4.
     // Defaults to Commitment.Single.
@@ -126,7 +129,6 @@ export class Client {
         } else {
             this.kinVersion = 3;
         }
-
         let defaultEndpoint: string;
         switch (env) {
             case Environment.Test:
@@ -190,6 +192,7 @@ export class Client {
             accountClient: conf?.accountClient,
             txClient: conf?.txClient,
             kinVersion: this.kinVersion,
+            desiredKinVersion: conf?.desiredKinVersion,
         };
         if (!internalConf.endpoint && !internalConf.accountClient && !internalConf.endpoint) {
             internalConf.endpoint = defaultEndpoint;

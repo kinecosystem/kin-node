@@ -41,6 +41,7 @@ import LRUCache from "lru-cache";
 export const SDK_VERSION = "0.2.3";
 export const USER_AGENT_HEADER = "kin-user-agent";
 export const KIN_VERSION_HEADER = "kin-version";
+export const DESIRED_KIN_VERSION_HEADER = "desired-kin-version";
 export const USER_AGENT = `KinSDK/${SDK_VERSION} node/${process.version}`;
 const SERVICE_CONFIG_CACHE_KEY = "GetServiceConfig";
 
@@ -65,6 +66,8 @@ export interface InternalClientConfig {
 
     strategies?: ShouldRetry[]
     kinVersion?: number
+
+    desiredKinVersion?: number
 }
 
 // Internal is the low level gRPC client for Agora used by Client.
@@ -129,6 +132,9 @@ export class Internal {
         this.metadata = new grpc.Metadata();
         this.metadata.set(USER_AGENT_HEADER, USER_AGENT);
         this.metadata.set(KIN_VERSION_HEADER, this.kinVersion.toString());
+        if (config.desiredKinVersion) {
+            this.metadata.set(DESIRED_KIN_VERSION_HEADER, config.desiredKinVersion!.toString());
+        }
 
         // Currently only caching GetServiceConfig, so limit to 1 entry
         this.responseCache = new LRUCache({
