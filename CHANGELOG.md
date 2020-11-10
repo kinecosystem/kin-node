@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## [0.3.0](https://github.com/kinecosystem/kin-node/releases/tag/0.3.0)
 - Add Kin 4 support
 - Rename `txHash` to `txId` in `Client.getTransaction`, `TransactionData` and `EarnResult`
 - Add `defaultCommitment` to `ClientConfig`
