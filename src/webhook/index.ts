@@ -38,7 +38,7 @@ export interface Event {
         solana_event?: {
             transaction: string,
             tx_error?: string,
-            tx_error_raw?: string 
+            tx_error_raw?: string
         }
     }
 }
@@ -74,17 +74,17 @@ export function EventsHandler(callback: (events: Event[]) => void, secret?: stri
 }
 
 export class SignTransactionRequest {
-    userId?:      string;
-    userPassKey?: string;
-    payments:     ReadOnlyPayment[];
-    envelope?:     xdr.TransactionEnvelope;
-    transaction?: SolanaTransaction;
+    userId?:            string;
+    userPassKey?:       string;
+    payments:           ReadOnlyPayment[];
+    envelope?:          xdr.TransactionEnvelope;
+    solanaTransaction?: SolanaTransaction;
 
     networkPassphrase?: string;
     kinVersion: number;
 
     constructor(
-        payments: ReadOnlyPayment[], kinVersion: number, networkPassphrase?: string, envelope?: xdr.TransactionEnvelope, 
+        payments: ReadOnlyPayment[], kinVersion: number, networkPassphrase?: string, envelope?: xdr.TransactionEnvelope,
         transaction?: SolanaTransaction, userId?: string, userPassKey?: string
     ) {
         this.userId = userId;
@@ -92,7 +92,7 @@ export class SignTransactionRequest {
         this.payments = payments;
 
         this.envelope = envelope;
-        this.transaction = transaction;
+        this.solanaTransaction = transaction;
         this.networkPassphrase = networkPassphrase;
 
         this.kinVersion = kinVersion;
@@ -100,17 +100,23 @@ export class SignTransactionRequest {
 
     /**
      * @deprecated - Use `txId()` instead.
+     *
+     *
+     * Returns the transaction hash of a stellar transaction,
+     * or the signature of a solana transaction.
      */
     txHash(): Buffer {
-        if (!this.envelope || !this.networkPassphrase) {
+        const id = this.txId();
+        if (!id) {
             throw new Error("this transaction has no hash");
         }
-        return TransactionBuilder.fromXDR(this.envelope!, this.networkPassphrase!).hash();
+
+        return id!;
     }
 
     txId(): Buffer | undefined {
-        if (this.transaction) {
-            return this.transaction.signature;
+        if (this.solanaTransaction) {
+            return this.solanaTransaction.signature;
         }
         if (this.envelope) {
             return TransactionBuilder.fromXDR(this.envelope!, this.networkPassphrase!).hash();
@@ -215,7 +221,7 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
         try {
             interface requestBody {
                 envelope_xdr: string
-                transaction: string
+                solana_transaction: string
                 invoice_list: string
                 kin_version: number
             }
@@ -239,12 +245,12 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
 
             const kinVersion = (reqBody.kin_version ? reqBody.kin_version : 3);
             if (kinVersion === 4) {
-                if (!reqBody.transaction || typeof reqBody.transaction != "string") {
+                if (!reqBody.solana_transaction || typeof reqBody.solana_transaction != "string") {
                     resp.sendStatus(400);
                     return;
                 }
-                
-                const txBytes = Buffer.from(reqBody.transaction, "base64");
+
+                const txBytes = Buffer.from(reqBody.solana_transaction, "base64");
                 const tx = SolanaTransaction.from(txBytes);
                 const payments = paymentsFromTransaction(tx, invoiceList);
                 signRequest = new SignTransactionRequest(payments, 4, undefined, undefined, tx, userId, userPassKey);

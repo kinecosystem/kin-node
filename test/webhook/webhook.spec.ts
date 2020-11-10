@@ -174,7 +174,7 @@ test("eventsHandler", async () => {
     expect(received[1].transaction_event.tx_id).toEqual(received[1].transaction_event.tx_hash);
     delete received[0].transaction_event.tx_id;
     delete received[1].transaction_event.tx_id;
-    
+
     expect(received).toStrictEqual(sent);
 });
 
@@ -287,12 +287,12 @@ test("signtransactionHandler Kin 4", async () => {
     interface signResponse {
         envelope_xdr: string
     }
-    
+
     const sender = PrivateKey.random().publicKey();
     const destination = PrivateKey.random().publicKey();
     const recentBlockhash = PrivateKey.random().publicKey();
     const tokenProgram = PrivateKey.random().publicKey();
-    
+
     let actualUserId: string | undefined;
     let actualUserPasskey: string | undefined;
 
@@ -302,7 +302,7 @@ test("signtransactionHandler Kin 4", async () => {
         actualUserPasskey = req.userPassKey;
     }, WEBHOOK_SECRET));
 
-    const transaction = new SolanaTransaction({ 
+    const transaction = new SolanaTransaction({
         feePayer: sender.solanaKey(),
         recentBlockhash: recentBlockhash.toBase58(),
     }).add(
@@ -315,7 +315,7 @@ test("signtransactionHandler Kin 4", async () => {
     ));
 
     const req = {
-        transaction: transaction.serialize({
+        solana_transaction: transaction.serialize({
             verifySignatures: false,
             requireAllSignatures: false,
         }).toString("base64"),
@@ -356,7 +356,7 @@ test("signTransactionHandler rejection Kin 4", async () => {
         resp.markAlreadyPaid(2);
     }));
 
-    const transaction = new SolanaTransaction({ 
+    const transaction = new SolanaTransaction({
         feePayer: sender.solanaKey(),
         recentBlockhash: recentBlockhash.toBase58(),
     });
@@ -373,7 +373,7 @@ test("signTransactionHandler rejection Kin 4", async () => {
     }
 
     const req = {
-        transaction: transaction.serialize({
+        solana_transaction: transaction.serialize({
             verifySignatures: false,
             requireAllSignatures: false,
         }).toString("base64"),
@@ -409,8 +409,8 @@ test("signTransactionRequest getTxId", async () => {
     const destination = PrivateKey.random().publicKey();
     const recentBlockhash = PrivateKey.random().publicKey();
     const tokenProgram = PrivateKey.random().publicKey();
-    
-    const transaction = new SolanaTransaction({ 
+
+    const transaction = new SolanaTransaction({
         feePayer: sender.solanaKey(),
         recentBlockhash: recentBlockhash.toBase58(),
     }).add(
