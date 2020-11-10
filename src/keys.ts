@@ -38,11 +38,12 @@ export class PublicKey {
         throw new Error("address is not a base58-encoded public key");
     }
 
-    stellarAddress(): string {
-        return StrKey.encodeEd25519PublicKey(this.buffer);
-    }
     toBase58(): string {
         return bs58.encode(this.buffer);
+    }
+
+    stellarAddress(): string {
+        return StrKey.encodeEd25519PublicKey(this.buffer);
     }
 
     equals(other: PublicKey): boolean {
@@ -74,6 +75,19 @@ export class PrivateKey {
 
         // attempt to parse
         return new PrivateKey(Keypair.fromRawEd25519Seed(Buffer.from(seed, "hex")));
+    }
+
+    static fromBase58(seed: string): PrivateKey {
+        const decoded58 = bs58.decode(seed);
+        if (decoded58.length == 32) {
+            return new PrivateKey(Keypair.fromRawEd25519Seed(Buffer.from(decoded58)));
+        }
+
+        throw new Error("seed is not a valid base58-encoded secret seed");
+    }
+    
+    toBase58(): string {
+        return bs58.encode(this.kp.rawSecretKey());
     }
 
     publicKey(): PublicKey {

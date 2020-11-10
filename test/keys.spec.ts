@@ -12,7 +12,7 @@ test("stellar_keys", () => {
     expect(privKey.publicKey().equals(pubKey)).toBeTruthy();
     expect(privKey.stellarSeed()).toBe(priv);
     expect(privKey.publicKey().stellarAddress()).toBe(pub);
-})
+});
 
 test("invalid stellar keys", () => {
     const invalidPublicKeys = [
@@ -22,7 +22,7 @@ test("invalid stellar keys", () => {
         "GCABWU4FHL3RGOIWCX5TOVLIAMLEU2YXXLCMHVXLDOFHKLNLGCSBRJYPXXXXXXXXXXXXXXXX",
     ];
     for (const k of invalidPublicKeys) {
-        expect(() => { PublicKey.fromString(k) }).toThrow();
+        expect(() => { PublicKey.fromString(k); }).toThrow();
     }
 
     const invalidPrivateKeys = [
@@ -31,6 +31,14 @@ test("invalid stellar keys", () => {
         "SCZ4KGTCMAFIJQCCJDMMKDFUB7NYV56VBNEU7BKMR4PQFUETJCWLV6GNXXXXXXX",
     ];
     for (const k of invalidPrivateKeys) {
-        expect(() => { PrivateKey.fromString(k) }).toThrow();
+        expect(() => { PrivateKey.fromString(k); }).toThrow();
     }
-})
+});
+
+test("base58 round trip", () => {
+    const pk = PrivateKey.random();
+    expect(PrivateKey.fromBase58(pk.toBase58())).toEqual(pk);
+
+    const pubkey = pk.publicKey();
+    expect(PublicKey.fromBase58(pubkey.toBase58())).toEqual(pubkey);
+});
