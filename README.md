@@ -1,7 +1,7 @@
 # Kin Node SDK
 
 The Kin Node SDK enables developers use Kin inside their backend servers. It contains support for blockchain actions
-such as creating accounts and sending payments, as well a webhook handler class to assist with implementing Agora webhooks.
+such as creating accounts and sending payments, as well a webhook handler class to assist with implementing Agora webhooks. It is recommended that developers read the [website documentation](https://docs.kin.org) prior to using this SDK.
 
 ## Requirements
 * Node supporting ES2015 or higher
@@ -50,9 +50,11 @@ const client = new Client(Environment.Test, {
 ```
 
 Additional options include:
-- `whitelistKey`: The private key of an account that will be used to co-sign all transactions.
+- `whitelistKey`: The private key of an account that will be used to co-sign all transactions. Should only be set for Kin 3.
 - `retryConfig`: A custom `agora.client.RetryConfig` to configure how the client retries requests.
 - `endpoint`: A specific endpoint to use in the client. This will be inferred by default from the Environment.
+- `kinVersion`: The version of Kin to use. Defaults to 3.
+- `defaultCommitment`: (Kin 4 only) The commitment requirement to use by default for Kin 4 Agora requests. See the [website documentation](https://docs.kin.org/solana#commitment) for more information.
 
 ### Usage
 #### Create an Account
@@ -62,12 +64,20 @@ const privateKey = PrivateKey.random();
 await client.createAccount(privateKey);
 ```
 
+In addition to the mandatory `key` parameter, `createAccount` has the following optional parameters:
+- `commitment`: (Kin 4 only) Indicates to Solana which bank state to query. See the [website documentation](https://docs.kin.org/solana#commitment) for more details. 
+- `subsidizer`: (Kin 4 only) The private key of an account to use as the funder of the transaction instead of the subsidizer configured on Agora.
+
 #### Get a Transaction
-The `getTransaction` method gets transaction data by transaction hash.
+The `getTransaction` method gets transaction data by transaction id.
 ```typescript
-const txHash = Buffer.from("<hex encoded transaction hash>", "hex");
-const transactionData = await client.getTransaction(txHash);
+// txId is either a 32-byte Stellar transaction hash or a 64-byte Solana transaction signature
+const txId = Buffer.from("<hex encoded transaction hash>", "hex");
+const transactionData = await client.getTransaction(txId);
 ```
+
+In addition to the mandatory `txId` parameter, `getTransaction` has the following optional parameters:
+- `commitment`: (Kin 4 only) Indicates to Solana which bank state to query. See the [website documentation](https://docs.kin.org/solana#commitment) for more details. 
 
 #### Get an Account Balance
 The `getBalance` method gets the balance of the provided account, in [quarks](https://docs.kin.org/terms-and-concepts#quark)
@@ -75,6 +85,9 @@ The `getBalance` method gets the balance of the provided account, in [quarks](ht
 const publicKey = PublicKey.fromString("");
 const balance = await client.getBalance(publicKey);
 ```
+
+In addition to the mandatory `account` parameter, `getBalance` has the following optional parameters:
+- `commitment`: (Kin 4 only) Indicates to Solana which bank state to query. See the [website documentation](https://docs.kin.org/solana#commitment) for more details. 
 
 #### Submit a Payment
 The `submitPayment` method submits the provided payment to Agora.
@@ -97,9 +110,15 @@ A `Payment` has the following required properties:
 - `quarks`: The amount of the payment, in [quarks](https://docs.kin.org/terms-and-concepts#quark).
 
 Additionally, it has some optional properties:
-- `channel`: The private key of a channel account to use as the source of the transaction. If unset, `sender` will be used as the transaction source.
+- `channel`: (Kin 2 and Kin 3 only) The private key of a channel account to use as the source of the transaction. If unset, `sender` will be used as the transaction source.
 - `invoice`: An [Invoice](https://docs.kin.org/how-it-works#invoices) to associate with this payment. Cannot be set if `memo` is set.
 - `memo` A text memo to include in the transaction. Cannot be set if `invoice` is set.
+- `subsidizer`: (Kin 4 only) The private key of an account to use as the funder of the transaction instead of the subsidizer configured on Agora.
+
+`submitPayment` also has the following optional parameters:
+- `commitment`: (Kin 4 only) Indicates to Solana which bank state to query. See the [website documentation](https://docs.kin.org/solana#commitment) for more details.
+- `senderResolution`: (Kin 4 only) Indicates which type of account resolution to use for the payment sender.
+- `destinationResolution`: (Kin 4 only) Indicates which type of account resolution to use for the payment destination.
 
 #### Submit an Earn Batch
 The `submitEarnBatch` method submits a batch of earns to Agora from a single account. It batches the earns into fewer
@@ -127,11 +146,16 @@ A single `Earn` has the following properties:
 - `quarks`: The amount of the earn, in [quarks](https://docs.kin.org/terms-and-concepts#quark).
 - `invoice`: (optional) An [Invoice](https://docs.kin.org/how-it-works#invoices) to associate with this earn.
 
-The `submitEarnBatch` method has the following parameters:
+An `EarnBatch` has the following parameters:
 - `sender`:  The private key of the account from which the earns will be sent.
 - `earns`: The list of earns to send.
-- `channel`: (optional): The private key of a channel account to use as the transaction source. If not set, `sender` will be used as the source.
+- `channel`: (optional, Kin 2 and Kin 3 only): The private key of a channel account to use as the transaction source. If not set, `sender` will be used as the source.
 - `memo`: (optional) A text memo to include in the transaction. Cannot be used if the earns have invoices associated with them.
+
+`submitEarnBatch` also has the following optional parameters:
+- `commitment`: (Kin 4 only) Indicates to Solana which bank state to query. See the [website documentation](https://docs.kin.org/solana#commitment) for more details.
+- `senderResolution`: (Kin 4 only) Indicates which type of account resolution to use for the payment sender.
+- `destinationResolution`: (Kin 4 only) Indicates which type of account resolution to use for the payment destination.
 
 ### Examples
 A few examples for creating an account and different ways of submitting payments and batched earns can be found in `examples/client`.
@@ -179,6 +203,7 @@ app.use("/events", EventsHandler(events: []Event) => {
 ```
 
 #### Sign Transaction Webhook
+The sign transaction webhook is used to sign Kin 3 transactions with a whitelisted Kin 3 account to remove fees. On Kin 4, the webhook can be used to simply approve or reject transactions submitted by mobile clients. 
 
 To verify and sign transactions related to your app:
 
