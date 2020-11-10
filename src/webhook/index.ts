@@ -98,11 +98,23 @@ export class SignTransactionRequest {
         this.kinVersion = kinVersion;
     }
 
+    /**
+     * @deprecated - Use `txId()` instead.
+     */
     txHash(): Buffer {
         if (!this.envelope || !this.networkPassphrase) {
             throw new Error("this transaction has no hash");
         }
         return TransactionBuilder.fromXDR(this.envelope!, this.networkPassphrase!).hash();
+    }
+
+    txId(): Buffer | undefined {
+        if (this.transaction) {
+            return this.transaction.signature;
+        }
+        if (this.envelope) {
+            return TransactionBuilder.fromXDR(this.envelope!, this.networkPassphrase!).hash();
+        }
     }
 }
 

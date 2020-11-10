@@ -2,7 +2,7 @@ import express from "express";
 import request from "supertest";
 import { hmac, sha256 } from "hash.js";
 import { Keypair, xdr, TransactionBuilder } from "stellar-base";
-import { Transaction as SolanaTransaction } from "@solana/web3.js";
+import { Account as SolanaAccount, Transaction as SolanaTransaction, } from "@solana/web3.js";
 
 import {
     Event,
@@ -401,4 +401,37 @@ test("signTransactionHandler rejection Kin 4", async () => {
         expect(invoiceErrors[i].operation_index).toBe(i);
         expect(invoiceErrors[i].reason).toBe(expectedReasons[i]);
     }
+});
+
+test("signTransactionRequest getTxId", async () => {
+    const owner = PrivateKey.random();
+    const sender = PrivateKey.random().publicKey();
+    const destination = PrivateKey.random().publicKey();
+    const recentBlockhash = PrivateKey.random().publicKey();
+    const tokenProgram = PrivateKey.random().publicKey();
+    
+    const transaction = new SolanaTransaction({ 
+        feePayer: sender.solanaKey(),
+        recentBlockhash: recentBlockhash.toBase58(),
+    }).add(
+        TokenProgram.transfer({
+            source: sender.solanaKey(),
+            dest: destination.solanaKey(),
+            owner: owner.publicKey().solanaKey(),
+            amount: BigInt(100),
+        }, tokenProgram.solanaKey(),
+    ));
+    transaction.sign(new SolanaAccount(owner.secretKey()));
+
+    let req = new SignTransactionRequest([], 4, undefined, undefined, transaction);
+    expect(req.txId()).toEqual(transaction.signature);
+
+    const keypair = PrivateKey.random();
+    let envelope = xdr.TransactionEnvelope.fromXDR("AAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAADAp4yjwgs7DQ5hMiUyMqzpC22u6NWTXaX85D4qbzTj9wAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAALpctlQBhbHSdXACe6mk64mbrrl6DjRI5U7eAy2I3TUTAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAlbaWfZsuwTJg+gyJYp8vcDTwNWazt4rt+0K8TMkW374AAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAAA6KpnKS3rx9Vyqcj1oVWUHHXo9Tnf9t0ComjOg7C26AwAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAAGhVkpXOey36N862ZAPRVa2MAUJt93b4DRjarjSn9mZUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAA6BljUXmxqUtHbyBqIF09xdgf115SP4FbwFg+49en2IoAAAAAAAAAAAAAAAoAAAABAAAAAEUO4l6xxAcS8984GVe3Kq02DSZzOwojZCJsVqLtGbiyAAAAAQAAAABqBXeFh+UFtWbGv2hJ2jLYEQsfTY3aeE16LkP0S1P0MgAAAAAAAAAAAAAACgAAAAEAAAAARQ7iXrHEBxLz3zgZV7cqrTYNJnM7CiNkImxWou0ZuLIAAAABAAAAACFDsaY8xZjoFL3U9TZYdOdcAHOYD78JI/a9dY95sGNUAAAAAAAAAAAAAAAKAAAAAQAAAABFDuJescQHEvPfOBlXtyqtNg0mczsKI2QibFai7Rm4sgAAAAEAAAAAS8TkraTWvQD38UQZcDqEWKX7UPlUlQGwsZfKQ9O2KPIAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64") ;
+    const builder = TransactionBuilder.fromXDR(envelope, NetworkPasshrase.Test);
+    builder.sign(keypair.kp);
+    envelope = builder.toEnvelope();
+
+    req = new SignTransactionRequest([], 3, NetworkPasshrase.Test, envelope);
+    expect(req.txId()).toEqual(builder.hash());
 });

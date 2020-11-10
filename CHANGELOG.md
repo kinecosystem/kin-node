@@ -8,6 +8,7 @@
 - Add optional `subsidizer` parameter to `Client.create_account`, `Payment`, and `EarnBatch`
 - Add optional `senderResolution` and `destinationResolution` parameters to `Client.submitPayment` and `Client.submitEarnBatch`
 - Mark `tx_hash` property in `Event` as deprecated.
+- Mark `SignTransactionRequest.txHash()` as deprecated in favour of `SignTransactionRequest.txId()`.
 
 ## [0.2.3](https://github.com/kinecosystem/kin-node/releases/tag/0.2.3)
 - Add Kin 2 support
