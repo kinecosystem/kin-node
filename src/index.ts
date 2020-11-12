@@ -358,7 +358,8 @@ export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTrans
     data.txId = Buffer.from(item.getTransactionId()!.getValue());
     data.txState = transactionStateFromProto(state);
 
-    if (item.getInvoiceList()?.getInvoicesList().length !== item.getPaymentsList().length) {
+    const invoiceList = item.getInvoiceList();
+    if (invoiceList && invoiceList.getInvoicesList().length !== item.getPaymentsList().length) {
         throw new Error("number of invoices does not match number of payments");
     }
 
