@@ -150,7 +150,7 @@ export class TokenProgram {
                 { pubkey: this.rentSysVar, isSigner: false, isWritable: false },
             ],
             programId: tokenProgram,
-            data: new Buffer(new Uint8Array([Command.InitializeAccount])),
+            data: Buffer.from(new Uint8Array([Command.InitializeAccount])),
         });
     }
 
