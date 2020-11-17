@@ -284,7 +284,15 @@ export class Client {
     // is called. In this state, the transaction may or may not resolve in
     // the future, it is simply unknown _at this time_.
     async getTransaction(txId: Buffer, commitment: Commitment = this.defaultCommitment): Promise<TransactionData|undefined> {
-        return this.internal.getTransaction(txId, commitment);
+        switch (this.kinVersion) {
+            case 2:
+            case 3:
+                return this.internal.getStellarTransaction(txId);
+            case 4:
+                return this.internal.getTransaction(txId, commitment);
+            default:
+                return Promise.reject("unsupported kin version: " + this.kinVersion);
+        }
     }
 
     // submitPayment submits a payment.

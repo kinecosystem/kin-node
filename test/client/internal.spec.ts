@@ -238,35 +238,34 @@ test('createStellarAccount', async () => {
     }
 });
 
-test('getTransaction Kin 3', async () => {
+test('getStellarTransaction Kin 3', async () => {
     const env = newTestEnv(3);
-    const [client, txClientV4] = [env.client, env.txClientV4];
-    
+    const [client, txClient] = [env.client, env.txClient];
+
     const testCases: {
         transaction_data: {
-            tx_id: string
+            tx_hash: string
             payments: {
-                sender: string
+                sender:      string
                 destination: string
-                type: number
-                quarks: number
-                memo?: string
+                type:        number
+                quarks:      number
+                memo?:       string
                 invoice: {
                     items: {
-                        title: string
+                        title:        string
                         description?: string
-                        amount: string
-                        sku?: string
+                        amount:       string
+                        sku?:         string
                     }[]
                 }
             }[],
         },
-        transaction_state: number,
         response: string
-    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_test_kin_3.json")).toString());
+    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_v3_test_kin_3.json")).toString());
 
     let currentCase = 0;
-    when(txClientV4.getTransaction(anything(), anything(), anything()))
+    when(txClient.getTransaction(anything(), anything(), anything()))
         .thenCall((_, md: grpc.Metadata, callback) => {
             const err = validateHeaders(md, "3");
             if (err != undefined) {
@@ -274,7 +273,7 @@ test('getTransaction Kin 3', async () => {
                 return;
             }
 
-            const resp = transactionpbv4.GetTransactionResponse
+            const resp = transactionpb.GetTransactionResponse
                 .deserializeBinary(Buffer.from(testCases[currentCase].response, "base64"));
             callback(undefined, resp);
         });
@@ -283,28 +282,27 @@ test('getTransaction Kin 3', async () => {
         currentCase = i;
         const tc = testCases[i];
 
-        const txData = await client.getTransaction(Buffer.from(tc.transaction_data.tx_id, "base64"));
+        const txData = await client.getStellarTransaction(Buffer.from(tc.transaction_data.tx_hash, "base64"));
         expect(txData).toBeDefined();
-        expect(txData!.txState).toBe(tc.transaction_state);
         expect(txData!.errors).toBeUndefined();
-        expect(txData!.txId).toStrictEqual(Buffer.from(tc.transaction_data.tx_id, "base64"));
+        expect(txData!.txId).toStrictEqual(Buffer.from(tc.transaction_data.tx_hash, "base64"));
 
-        const expectedPayments = testCases[currentCase].transaction_data.payments.map(p => {
+        const expectedPayments = testCases[currentCase].transaction_data.payments.map(v => {
             const payment: ReadOnlyPayment = {
-                sender: new PublicKey(Buffer.from(p.sender, "base64")),
-                destination: new PublicKey(Buffer.from(p.destination, "base64")),
-                type: p.type,
-                quarks: new BigNumber(p.quarks).toString(),
+                sender: new PublicKey(Buffer.from(v.sender, "base64")),
+                destination: new PublicKey(Buffer.from(v.destination, "base64")),
+                type: v.type,
+                quarks: new BigNumber(v.quarks).toString(),
             };
-            if (p.memo) {
-                payment.memo = p.memo;
+            if (v.memo) {
+                payment.memo = v.memo;
             }
-            if (p.invoice) {
+            if (v.invoice) {
                 payment.invoice = {
-                    Items: p.invoice.items.map(item => {
+                    Items: v.invoice.items.map(item => {
                         const invoiceItem: InvoiceItem = {
-                            title: item.title,
-                            amount: new BigNumber(item.amount),
+                            title:       item.title,
+                            amount:      new BigNumber(item.amount),
                         };
                         if (item.description) {
                             invoiceItem.description = item.description;
@@ -322,35 +320,34 @@ test('getTransaction Kin 3', async () => {
     }
 });
 
-test('getTransaction Kin 2', async () => {
+test('getStellarTransaction Kin 2', async () => {
     const env = newTestEnv(2);
-    const [client, txClientV4] = [env.client, env.txClientV4];
-    
+    const [client, txClient] = [env.client, env.txClient];
+
     const testCases: {
         transaction_data: {
-            tx_id: string
+            tx_hash: string
             payments: {
-                sender: string
+                sender:      string
                 destination: string
-                type: number
-                quarks: number
-                memo?: string
+                type:        number
+                quarks:      number
+                memo?:       string
                 invoice: {
                     items: {
-                        title: string
+                        title:        string
                         description?: string
-                        amount: string
-                        sku?: string
+                        amount:       string
+                        sku?:         string
                     }[]
                 }
             }[],
         },
-        transaction_state: number,
         response: string
-    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_test_kin_2.json")).toString());
+    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_v3_test_kin_2.json")).toString());
 
     let currentCase = 0;
-    when(txClientV4.getTransaction(anything(), anything(), anything()))
+    when(txClient.getTransaction(anything(), anything(), anything()))
         .thenCall((_, md: grpc.Metadata, callback) => {
             const err = validateHeaders(md, "2");
             if (err != undefined) {
@@ -358,7 +355,7 @@ test('getTransaction Kin 2', async () => {
                 return;
             }
 
-            const resp = transactionpbv4.GetTransactionResponse
+            const resp = transactionpb.GetTransactionResponse
                 .deserializeBinary(Buffer.from(testCases[currentCase].response, "base64"));
             callback(undefined, resp);
         });
@@ -367,28 +364,27 @@ test('getTransaction Kin 2', async () => {
         currentCase = i;
         const tc = testCases[i];
 
-        const txData = await client.getTransaction(Buffer.from(tc.transaction_data.tx_id, "base64"));
+        const txData = await client.getStellarTransaction(Buffer.from(tc.transaction_data.tx_hash, "base64"));
         expect(txData).toBeDefined();
-        expect(txData!.txState).toBe(tc.transaction_state);
         expect(txData!.errors).toBeUndefined();
-        expect(txData!.txId).toStrictEqual(Buffer.from(tc.transaction_data.tx_id, "base64"));
+        expect(txData!.txId).toStrictEqual(Buffer.from(tc.transaction_data.tx_hash, "base64"));
 
-        const expectedPayments = testCases[currentCase].transaction_data.payments.map(p => {
+        const expectedPayments = testCases[currentCase].transaction_data.payments.map(v => {
             const payment: ReadOnlyPayment = {
-                sender: new PublicKey(Buffer.from(p.sender, "base64")),
-                destination: new PublicKey(Buffer.from(p.destination, "base64")),
-                type: p.type,
-                quarks: new BigNumber(p.quarks).toString(),
+                sender: new PublicKey(Buffer.from(v.sender, "base64")),
+                destination: new PublicKey(Buffer.from(v.destination, "base64")),
+                type: v.type,
+                quarks: new BigNumber(v.quarks).toString(),
             };
-            if (p.memo) {
-                payment.memo = p.memo;
+            if (v.memo) {
+                payment.memo = v.memo;
             }
-            if (p.invoice) {
+            if (v.invoice) {
                 payment.invoice = {
-                    Items: p.invoice.items.map(item => {
+                    Items: v.invoice.items.map(item => {
                         const invoiceItem: InvoiceItem = {
-                            title: item.title,
-                            amount: new BigNumber(item.amount),
+                            title:       item.title,
+                            amount:      new BigNumber(item.amount),
                         };
                         if (item.description) {
                             invoiceItem.description = item.description;
@@ -882,6 +878,173 @@ test('internal retry', async () => {
     verify(txClient.submitTransaction(anything(), anything(), anything())).times(3);
 });
 
+test('getTransaction Kin 3', async () => {
+    const env = newTestEnv(3);
+    const [client, txClientV4] = [env.client, env.txClientV4];
+    
+    const testCases: {
+        transaction_data: {
+            tx_id: string
+            payments: {
+                sender: string
+                destination: string
+                type: number
+                quarks: number
+                memo?: string
+                invoice: {
+                    items: {
+                        title: string
+                        description?: string
+                        amount: string
+                        sku?: string
+                    }[]
+                }
+            }[],
+        },
+        transaction_state: number,
+        response: string
+    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_test_kin_3.json")).toString());
+
+    let currentCase = 0;
+    when(txClientV4.getTransaction(anything(), anything(), anything()))
+        .thenCall((_, md: grpc.Metadata, callback) => {
+            const err = validateHeaders(md, "3");
+            if (err != undefined) {
+                callback(err, undefined);
+                return;
+            }
+
+            const resp = transactionpbv4.GetTransactionResponse
+                .deserializeBinary(Buffer.from(testCases[currentCase].response, "base64"));
+            callback(undefined, resp);
+        });
+
+    for (let i = 0; i < testCases.length; i++) {
+        currentCase = i;
+        const tc = testCases[i];
+
+        const txData = await client.getTransaction(Buffer.from(tc.transaction_data.tx_id, "base64"));
+        expect(txData).toBeDefined();
+        expect(txData!.txState).toBe(tc.transaction_state);
+        expect(txData!.errors).toBeUndefined();
+        expect(txData!.txId).toStrictEqual(Buffer.from(tc.transaction_data.tx_id, "base64"));
+
+        const expectedPayments = testCases[currentCase].transaction_data.payments.map(p => {
+            const payment: ReadOnlyPayment = {
+                sender: new PublicKey(Buffer.from(p.sender, "base64")),
+                destination: new PublicKey(Buffer.from(p.destination, "base64")),
+                type: p.type,
+                quarks: new BigNumber(p.quarks).toString(),
+            };
+            if (p.memo) {
+                payment.memo = p.memo;
+            }
+            if (p.invoice) {
+                payment.invoice = {
+                    Items: p.invoice.items.map(item => {
+                        const invoiceItem: InvoiceItem = {
+                            title: item.title,
+                            amount: new BigNumber(item.amount),
+                        };
+                        if (item.description) {
+                            invoiceItem.description = item.description;
+                        }
+                        if (item.sku) {
+                            invoiceItem.sku = Buffer.from(item.sku, "base64");
+                        }
+                        return invoiceItem;
+                    })
+                };
+            }
+            return payment;
+        });
+        expect(txData!.payments).toStrictEqual(expectedPayments);
+    }
+});
+
+test('getTransaction Kin 2', async () => {
+    const env = newTestEnv(2);
+    const [client, txClientV4] = [env.client, env.txClientV4];
+    
+    const testCases: {
+        transaction_data: {
+            tx_id: string
+            payments: {
+                sender: string
+                destination: string
+                type: number
+                quarks: number
+                memo?: string
+                invoice: {
+                    items: {
+                        title: string
+                        description?: string
+                        amount: string
+                        sku?: string
+                    }[]
+                }
+            }[],
+        },
+        transaction_state: number,
+        response: string
+    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_test_kin_2.json")).toString());
+
+    let currentCase = 0;
+    when(txClientV4.getTransaction(anything(), anything(), anything()))
+        .thenCall((_, md: grpc.Metadata, callback) => {
+            const err = validateHeaders(md, "2");
+            if (err != undefined) {
+                callback(err, undefined);
+                return;
+            }
+
+            const resp = transactionpbv4.GetTransactionResponse
+                .deserializeBinary(Buffer.from(testCases[currentCase].response, "base64"));
+            callback(undefined, resp);
+        });
+
+    for (let i = 0; i < testCases.length; i++) {
+        currentCase = i;
+        const tc = testCases[i];
+
+        const txData = await client.getTransaction(Buffer.from(tc.transaction_data.tx_id, "base64"));
+        expect(txData).toBeDefined();
+        expect(txData!.txState).toBe(tc.transaction_state);
+        expect(txData!.errors).toBeUndefined();
+        expect(txData!.txId).toStrictEqual(Buffer.from(tc.transaction_data.tx_id, "base64"));
+
+        const expectedPayments = testCases[currentCase].transaction_data.payments.map(p => {
+            const payment: ReadOnlyPayment = {
+                sender: new PublicKey(Buffer.from(p.sender, "base64")),
+                destination: new PublicKey(Buffer.from(p.destination, "base64")),
+                type: p.type,
+                quarks: new BigNumber(p.quarks).toString(),
+            };
+            if (p.memo) {
+                payment.memo = p.memo;
+            }
+            if (p.invoice) {
+                payment.invoice = {
+                    Items: p.invoice.items.map(item => {
+                        const invoiceItem: InvoiceItem = {
+                            title: item.title,
+                            amount: new BigNumber(item.amount),
+                        };
+                        if (item.description) {
+                            invoiceItem.description = item.description;
+                        }
+                        if (item.sku) {
+                            invoiceItem.sku = Buffer.from(item.sku, "base64");
+                        }
+                        return invoiceItem;
+                    })
+                };
+            }
+            return payment;
+        });
+        expect(txData!.payments).toStrictEqual(expectedPayments);
+    }
+});
 test('getTransaction Kin 4', async () => {
     const env = newTestEnv(4);
     const [client, txClientV4] = [env.client, env.txClientV4];

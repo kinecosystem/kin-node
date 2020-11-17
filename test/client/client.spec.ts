@@ -28,6 +28,7 @@ import {
     xdrInt64ToBigNumber,
     AccountResolution,
     Commitment,
+    TransactionData,
 } from "../../src";
 import { TokenInstruction } from "../../src/solana/token-program";
 import { MemoInstruction } from "../../src/solana/memo-program";
@@ -121,6 +122,26 @@ test("client account management", async () => {
     }
 
     expect(await client.getBalance(account.publicKey())).toStrictEqual(new BigNumber(10));
+});
+
+test("getTransaction", async () => {
+    const internal = mock(InternalClient);
+    when(internal.getStellarTransaction(anything()))
+        .thenCall((txId: Buffer) => {
+            const data = new TransactionData();
+            data.txId = txId;
+            return Promise.resolve(data);
+        });
+    
+    const client = new Client(Environment.Test, {
+        appIndex: 0,
+        internal: instance(internal),
+    });
+    
+    const txId = Buffer.from("somehash");
+    const data = await client.getTransaction(txId);
+    expect(data).toBeDefined();
+    expect(data!.txId).toEqual(txId);
 });
 
 test("submitPayment app index not set", async() => {
@@ -934,6 +955,27 @@ test("client account management Kin 4", async () => {
     }
 
     expect(await client.getBalance(account.publicKey())).toStrictEqual(new BigNumber(10));
+});
+
+test("getTransaction Kin 4", async () => {
+    const internal = mock(InternalClient);
+    when(internal.getTransaction(anything(), anything()))
+        .thenCall((txId: Buffer) => {
+            const data = new TransactionData();
+            data.txId = txId;
+            return Promise.resolve(data);
+        });
+    
+    const client = new Client(Environment.Test, {
+        appIndex: 0,
+        internal: instance(internal),
+        kinVersion: 4,
+    });
+    
+    const txId = Buffer.from("somesig");
+    const data = await client.getTransaction(txId);
+    expect(data).toBeDefined();
+    expect(data!.txId).toEqual(txId);
 });
 
 test("submitPayment invalid kin version", async() => {

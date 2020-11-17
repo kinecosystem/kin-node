@@ -30,6 +30,10 @@ import {
     commitmentToProto,
     Commitment,
     txDataFromProto,
+    TransactionType,
+    Memo,
+    paymentsFromEnvelope,
+    TransactionState,
 } from "../";
 import { errorsFromXdr, AccountDoesNotExist, AccountExists, TransactionRejected, InsufficientBalance, errorsFromProto, PayerRequired, NoSubsidizerError, AlreadySubmitted, nonRetriableErrors as nonRetriableErrorsList, BadNonce, NoTokenAccounts } from "../errors";
 import { ShouldRetry, retryAsync, limit, nonRetriableErrors } from "../retry";
@@ -216,29 +220,46 @@ export class Internal {
         }, ...this.strategies);
     }
 
-    async getTransaction(id: Buffer, commitment: Commitment = Commitment.Single): Promise<TransactionData | undefined> {
-        const transactionId = new commonpbv4.TransactionId();
-        transactionId.setValue(id);
+    async getStellarTransaction(hash: Buffer): Promise<TransactionData | undefined> {
+        const transactionHash = new commonpb.TransactionHash();
+        transactionHash.setValue(hash);
 
-        const req = new transactionpbv4.GetTransactionRequest();
-        req.setTransactionId(transactionId);
-        req.setCommitment(commitmentToProto(commitment));
+        const req = new transactionpb.GetTransactionRequest();
+        req.setTransactionHash(transactionHash);
 
         return retryAsync(() => {
             return new Promise<TransactionData | undefined>((resolve, reject) => {
-                this.txClientV4.getTransaction(req, this.metadata, (err, resp) => {
+                this.txClient.getTransaction(req, this.metadata, (err, resp) => {
                     if (err) {
                         reject(err);
                         return;
                     }
 
-                    let data: TransactionData;
-                    if (resp.getItem()) {
-                        data = txDataFromProto(resp.getItem()!, resp.getState());
-                    } else {
-                        data = new TransactionData();
-                        data.txId = id;
-                        data.txState = transactionStateFromProto(resp.getState());
+                    const data = new TransactionData();
+                    data.txId = hash;
+
+                    switch (resp.getState()) {
+                        case transactionpb.GetTransactionResponse.State.UNKNOWN: {
+                            data.txState = TransactionState.Unknown;
+                            break;
+                        }
+                        case transactionpb.GetTransactionResponse.State.SUCCESS: {
+                            const envelope = xdr.TransactionEnvelope.fromXDR(Buffer.from(resp.getItem()!.getEnvelopeXdr()!));
+
+                            let type: TransactionType = TransactionType.Unknown;
+                            const memo = Memo.fromXdr(envelope.v0().tx().memo(), true);
+                            if (memo) {
+                                type = memo.TransactionType();
+                            }
+
+                            data.txState = TransactionState.Success;
+                            data.payments = paymentsFromEnvelope(envelope, type, resp.getItem()!.getInvoiceList(), this.kinVersion);
+                            break;
+                        }
+                        default: {
+                            reject("unknown transaction state: " + resp.getState());
+                            return;
+                        }
                     }
 
                     resolve(data);
@@ -462,6 +483,37 @@ export class Internal {
                     }
 
                     resolve(result);
+                });
+            });
+        }, ...this.strategies);
+    }
+
+    async getTransaction(id: Buffer, commitment: Commitment = Commitment.Single): Promise<TransactionData | undefined> {
+        const transactionId = new commonpbv4.TransactionId();
+        transactionId.setValue(id);
+
+        const req = new transactionpbv4.GetTransactionRequest();
+        req.setTransactionId(transactionId);
+        req.setCommitment(commitmentToProto(commitment));
+
+        return retryAsync(() => {
+            return new Promise<TransactionData | undefined>((resolve, reject) => {
+                this.txClientV4.getTransaction(req, this.metadata, (err, resp) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+
+                    let data: TransactionData;
+                    if (resp.getItem()) {
+                        data = txDataFromProto(resp.getItem()!, resp.getState());
+                    } else {
+                        data = new TransactionData();
+                        data.txId = id;
+                        data.txState = transactionStateFromProto(resp.getState());
+                    }
+
+                    resolve(data);
                 });
             });
         }, ...this.strategies);
