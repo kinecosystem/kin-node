@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## [0.3.3](https://github.com/kinecosystem/kin-node/releases/tag/0.3.3)
+- Call v3 `GetTransaction` API for Kin 2 & 3
+
 ## [0.3.2](https://github.com/kinecosystem/kin-node/releases/tag/0.3.2)
 - Fixed invoice count check bug
 
