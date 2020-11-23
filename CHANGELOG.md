@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## [0.3.4](https://github.com/kinecosystem/kin-node/releases/tag/0.3.4)
 - Do not reject Kin 4 payments with channel set
 - Check for duplicate signers for Stellar transactions
 
