@@ -428,6 +428,57 @@ test("submitPayment failure", async() => {
     }
 });
 
+test("submitPayment duplicate signers", async() => {
+    const internal = mock(InternalClient);
+
+    when(internal.getAccountInfo(anything()))
+        .thenCall(() => {
+            return Promise.resolve(new accountpb.AccountInfo());
+        });
+
+    const sender = PrivateKey.random();
+    const dest = PrivateKey.random();
+    const payment: Payment = {
+        sender: sender,
+        destination: dest.publicKey(),
+        type: TransactionType.Spend,
+        quarks: new BigNumber(11),
+        channel: sender,
+    };
+
+    interface submitRequest {
+        envelope: xdr.TransactionEnvelope,
+        invoice?: commonpb.InvoiceList,
+    }
+    let request: submitRequest | undefined;
+    when (internal.submitStellarTransaction(anything(), anything()))
+        .thenCall((envelope: xdr.TransactionEnvelope, invoice?: commonpb.InvoiceList) => {
+            request = {envelope, invoice};
+            return Promise.resolve(new SubmitTransactionResult());
+        });
+    
+    const client = new Client(Environment.Test, {
+        appIndex: 1,
+        internal: instance(internal),
+        whitelistKey: sender,
+    });
+    const resp = await client.submitPayment(payment);
+    expect(request).toBeDefined();
+    expect(request!.envelope.v0().tx().seqNum().low).toBe(1);
+    expect(request!.envelope.v0().tx().operations()[0].sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
+
+    expect(request!.envelope.v0().tx().sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+    
+    expect(request!.envelope.v0().signatures()).toHaveLength(1);
+    
+    // There should only be one signature despite channel + whitelister being set
+    expect(request!.envelope.v0().tx().memo().switch()).toBe(xdr.MemoType.memoHash());
+
+    const expected = Memo.new(1, payment.type, 1, Buffer.alloc(29));
+    const actual = Memo.fromXdr(request!.envelope.v0().tx().memo(), true);
+    expect(actual?.buffer).toStrictEqual(expected.buffer);
+});
+
 test("submitPayment Kin 2", async() => {
     const internal = mock(InternalClient);
 
@@ -789,6 +840,84 @@ test("submitEarnBatch failures", async() => {
             expect(result.failed[i].error).toBeInstanceOf(InsufficientBalance);
         } else {
             expect(result.failed[i].error).toBeUndefined();
+        }
+    }
+});
+
+test("submitEarnBatch duplicate signers", async() => {
+    const sender = PrivateKey.random();
+
+    const earns = new Array<Earn>();
+    for (let i = 0; i < 202; i++) {
+        const dest = PrivateKey.random();
+        earns.push({
+            destination: dest.publicKey(),
+            quarks: new BigNumber(1 + i),
+        });
+    }
+
+    const b: EarnBatch = {
+        sender: sender,
+        channel: sender,
+        earns: earns,
+    };
+
+    interface submitRequest {
+        envelope: xdr.TransactionEnvelope,
+        invoice?: commonpb.InvoiceList,
+    }
+    let requests = new Array<submitRequest>();
+
+    let seq = 0;
+    const internal = mock(InternalClient);
+    when (internal.getAccountInfo(anything()))
+        .thenCall(() => {
+            const accountInfo = new accountpb.AccountInfo();
+            accountInfo.setSequenceNumber(seq.toString());
+            seq++;
+
+            return Promise.resolve(accountInfo);
+        });
+    when (internal.submitStellarTransaction(anything(), anything()))
+        .thenCall((envelope: xdr.TransactionEnvelope, invoice?: commonpb.InvoiceList) => {
+            requests.push({envelope, invoice});
+            return Promise.resolve(new SubmitTransactionResult());
+        });
+
+    const client = new Client(Environment.Test, {
+        appIndex: 1,
+        internal: instance(internal),
+        whitelistKey: sender,
+    });
+
+    requests = new Array<submitRequest>();
+    seq = 0;
+
+    const result = await client.submitEarnBatch(b);
+    expect(requests).toHaveLength(3);
+
+    for (let reqId = 0; reqId < requests.length; reqId++) {
+        const req = requests[reqId];
+        const tx = req.envelope.v0().tx();
+
+        // There should only be one signature despite channel + whitelister being set
+        expect(req.envelope.v0().signatures()).toHaveLength(1);
+
+        expect(tx.operations()).toHaveLength(Math.min(100, b.earns.length - reqId*100));
+        expect(tx.seqNum().low).toBe(reqId+1);
+
+        expect(tx.sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+        
+        // since we have an app index configured, we still expect a memo
+        const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
+        expect(tx.memo().switch()).toBe(xdr.MemoType.memoHash());
+        expect(tx.memo().hash()).toStrictEqual(expected.buffer);
+        
+        for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
+            const op = tx.operations()[opIndex];
+            expect(op.sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
+            expect(op.body().paymentOp().amount().low).toBe((reqId * 100 + opIndex + 1));
+            expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[reqId * 100 + opIndex].destination.buffer);
         }
     }
 });
@@ -1387,14 +1516,7 @@ test("submitPayment Kin 4 invalid", async () => {
                     }
                 ]
             },
-        },
-        {
-            sender: sender,
-            destination: dest.publicKey(),
-            type: TransactionType.Spend,
-            quarks: new BigNumber(11),
-            channel: PrivateKey.random(),
-        },
+        }
     ];
 
     for (const p of payments) {

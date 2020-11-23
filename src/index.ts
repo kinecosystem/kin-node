@@ -307,7 +307,7 @@ export function paymentsFromTransaction(transaction: SolanaTransaction, invoiceL
         }
     }
 
-    const transferCount = (textMemo || agoraMemo) ? transaction.instructions.length - 1 : transaction.instructions.length;
+    const transferCount = transaction.instructions.length - transferStartIndex;
     if (invoiceList && invoiceList?.getInvoicesList().length !== transferCount) {
         throw new Error("number of invoices does not match number of payments");
     }

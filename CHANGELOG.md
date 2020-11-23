@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Do not reject Kin 4 payments with channel set
+- Check for duplicate signers for Stellar transactions
 
 ## [0.3.3](https://github.com/kinecosystem/kin-node/releases/tag/0.3.3)
 - Call v3 `GetTransaction` API for Kin 2 & 3

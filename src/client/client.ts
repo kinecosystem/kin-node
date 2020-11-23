@@ -316,7 +316,7 @@ export class Client {
             result = await this.submitPaymentWithResolution(payment, commitment, senderResolution, destinationResolution);
         } else {
             let signers: PrivateKey[];
-            if (payment.channel) {
+            if (payment.channel && !payment.channel!.equals(payment.sender)) {
                 signers = [payment.channel, payment.sender];
             } else {
                 signers = [payment.sender];
@@ -631,10 +631,6 @@ export class Client {
         payment: Payment, commitment: Commitment, senderResolution: AccountResolution = AccountResolution.Preferred, 
         destinationResolution: AccountResolution = AccountResolution.Preferred
     ): Promise<SubmitTransactionResult> {
-        if (payment.channel) {
-            return Promise.reject("cannot set `channel` on Kin 4 payments");
-        }
-
         const serviceConfig = await this.internal.getServiceConfig();
         if (!serviceConfig.getSubsidizerAccount() && !payment.subsidizer) {
             return Promise.reject(new NoSubsidizerError());
@@ -828,7 +824,7 @@ export class Client {
 
     private async submitSingleEarnBatch(batch: EarnBatch): Promise<SubmitTransactionResult> {
         let signers: PrivateKey[];
-        if (batch.channel) {
+        if (batch.channel && !batch.channel!.equals(batch.sender)) {
             signers = [batch.channel, batch.sender];
         } else {
             signers = [batch.sender];
@@ -950,7 +946,15 @@ export class Client {
             tx.sign(...signers.map(s => s.kp));
 
             if (this.whitelistKey) {
-                tx.sign(this.whitelistKey.kp);
+                let signed = false;
+                for (const s of signers) {
+                    if (s.equals(this.whitelistKey!)) {
+                        signed = true;
+                    }
+                }
+                if (!signed) {
+                    tx.sign(this.whitelistKey.kp);
+                }
             }
 
             result = await this.internal.submitStellarTransaction(tx.toEnvelope(), invoiceList);
