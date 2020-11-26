@@ -32,6 +32,7 @@ import {
     Commitment,
 } from "../../src";
 import { AccountSize, AuthorityType, TokenInstruction, TokenProgram } from "../../src/solana/token-program";
+import { generateTokenAccount } from "../../src/client/utils";
 
 const recentBlockhash = Buffer.alloc(32);
 const minBalanceForRentExemption = 40175902;
@@ -574,6 +575,8 @@ test('submitStellarTransaction invoice error', async () => {
 
 test('createSolanaAccount', async () => {
     const account = PrivateKey.random();
+    const tokenAccount = generateTokenAccount(account);
+
     const env = newTestEnv(4);
     const [client, accountClientV4, txClientV4] = [env.client, env.accountClientV4, env.txClientV4];
 
@@ -595,30 +598,33 @@ test('createSolanaAccount', async () => {
                 resp.setResult(accountpbv4.CreateAccountResponse.Result.EXISTS);
             } else {
                 const tx = SolanaTransaction.from(req.getTransaction()!.getValue_asU8());
-                expect(tx.signatures).toHaveLength(2);
+                expect(tx.signatures).toHaveLength(3);
                 expect(tx.signatures[0].publicKey.toBuffer()).toEqual(subsidizer);
                 expect(tx.signatures[0].signature).toBeNull();
 
-                expect(tx.signatures[1].publicKey.toBuffer()).toEqual(account.publicKey().buffer);
-                expect(account.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
+                expect(tx.signatures[1].publicKey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
+                expect(tokenAccount.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
+                
+                expect(tx.signatures[2].publicKey.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(account.kp.verify(tx.serializeMessage(), tx.signatures[2].signature!)).toBeTruthy();
 
                 expect(tx.instructions).toHaveLength(3);
                 const tokenProgramKey = new SolanaPublicKey(tokenProgram);
                 
                 const createInstruction = SystemInstruction.decodeCreateAccount(tx.instructions[0]);
                 expect(createInstruction.fromPubkey.toBuffer()).toEqual(subsidizer);
-                expect(createInstruction.newAccountPubkey.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(createInstruction.newAccountPubkey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(createInstruction.programId).toEqual(tokenProgramKey);
                 expect(createInstruction.lamports).toEqual(minBalanceForRentExemption);
                 expect(createInstruction.space).toEqual(AccountSize);
 
                 const initInstruction = TokenInstruction.decodeInitializeAccount(tx.instructions[1], tokenProgramKey);
-                expect(initInstruction.account.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(initInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(initInstruction.mint.toBuffer()).toEqual(token);
                 expect(initInstruction.owner.toBuffer()).toEqual(account.publicKey().buffer);
 
                 const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[2], tokenProgramKey);
-                expect(setAuthInstruction.account.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(setAuthInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(setAuthInstruction.currentAuthority.toBuffer()).toEqual(account.publicKey().buffer);
                 expect(setAuthInstruction.newAuthority!.toBuffer()).toEqual(subsidizer);
                 expect(setAuthInstruction.authorityType).toEqual(AuthorityType.CloseAccount);
@@ -641,6 +647,8 @@ test('createSolanaAccount', async () => {
 });
 test('createSolanaAccount no service subsidizer', async () => {
     const account = PrivateKey.random();
+    const tokenAccount = generateTokenAccount(account);
+    
     const appSubsidizer = PrivateKey.random();
     const env = newTestEnv(4);
     const [client, accountClientV4, txClientV4] = [env.client, env.accountClientV4, env.txClientV4];
@@ -663,30 +671,33 @@ test('createSolanaAccount no service subsidizer', async () => {
                 resp.setResult(accountpbv4.CreateAccountResponse.Result.EXISTS);
             } else {
                 const tx = SolanaTransaction.from(req.getTransaction()!.getValue_asU8());
-                expect(tx.signatures).toHaveLength(2);
+                expect(tx.signatures).toHaveLength(3);
                 expect(tx.signatures[0].publicKey.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
                 expect(appSubsidizer.kp.verify(tx.serializeMessage(), tx.signatures[0].signature!)).toBeTruthy();
 
-                expect(tx.signatures[1].publicKey.toBuffer()).toEqual(account.publicKey().buffer);
-                expect(account.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
+                expect(tx.signatures[1].publicKey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
+                expect(tokenAccount.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
+
+                expect(tx.signatures[2].publicKey.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(account.kp.verify(tx.serializeMessage(), tx.signatures[2].signature!)).toBeTruthy();
 
                 expect(tx.instructions).toHaveLength(3);
                 const tokenProgramKey = new SolanaPublicKey(tokenProgram);
                 
                 const createInstruction = SystemInstruction.decodeCreateAccount(tx.instructions[0]);
                 expect(createInstruction.fromPubkey.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
-                expect(createInstruction.newAccountPubkey.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(createInstruction.newAccountPubkey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(createInstruction.programId).toEqual(tokenProgramKey);
                 expect(createInstruction.lamports).toEqual(minBalanceForRentExemption);
                 expect(createInstruction.space).toEqual(AccountSize);
 
                 const initInstruction = TokenInstruction.decodeInitializeAccount(tx.instructions[1], tokenProgramKey);
-                expect(initInstruction.account.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(initInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(initInstruction.mint.toBuffer()).toEqual(token);
                 expect(initInstruction.owner.toBuffer()).toEqual(account.publicKey().buffer);
 
                 const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[2], tokenProgramKey);
-                expect(setAuthInstruction.account.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(setAuthInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(setAuthInstruction.currentAuthority.toBuffer()).toEqual(account.publicKey().buffer);
                 expect(setAuthInstruction.newAuthority!.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
                 expect(setAuthInstruction.authorityType).toEqual(AuthorityType.CloseAccount);

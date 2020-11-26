@@ -41,6 +41,7 @@ import BigNumber from "bignumber.js";
 import { Transaction } from "@solana/web3.js";
 import { AccountSize, AuthorityType, TokenProgram } from "../solana/token-program";
 import LRUCache from "lru-cache";
+import { generateTokenAccount } from "./utils";
 
 export const SDK_VERSION = "0.2.3";
 export const USER_AGENT_HEADER = "kin-user-agent";
@@ -313,6 +314,8 @@ export class Internal {
     }
 
     async createSolanaAccount(key: PrivateKey, commitment: Commitment = Commitment.Single, subsidizer?: PrivateKey): Promise<void> {
+        const tokenAccountKey = generateTokenAccount(key);
+        
         const fn = async() => {
             const [serviceConfigResp, recentBlockhash, minBalance] = await Promise.all([
                 this.getServiceConfig(),
@@ -338,24 +341,24 @@ export class Internal {
             }).add(
                 SystemProgram.createAccount({
                     fromPubkey: subsidizerKey,
-                    newAccountPubkey: key.publicKey().solanaKey(),
+                    newAccountPubkey: tokenAccountKey.publicKey().solanaKey(),
                     lamports: minBalance,
                     space: AccountSize,
                     programId: tokenProgram,
                 }),
                 TokenProgram.initializeAccount({
-                    account: key.publicKey().solanaKey(),
+                    account: tokenAccountKey.publicKey().solanaKey(),
                     mint: new SolanaPublicKey(Buffer.from(serviceConfigResp.getToken()!.getValue_asU8())),
                     owner: key.publicKey().solanaKey(),
                 }, tokenProgram),
                 TokenProgram.setAuthority({
-                    account: key.publicKey().solanaKey(),
+                    account: tokenAccountKey.publicKey().solanaKey(),
                     currentAuthority: key.publicKey().solanaKey(),
                     newAuthority: subsidizerKey,
                     authorityType: AuthorityType.CloseAccount,
                 }, tokenProgram)
             );
-            transaction.partialSign(new SolanaAccount(key.secretKey()));
+            transaction.partialSign(new SolanaAccount(key.secretKey()), new SolanaAccount(tokenAccountKey.secretKey()));
             if (subsidizer) {
                 transaction.partialSign(new SolanaAccount(subsidizer.secretKey()));
             }
