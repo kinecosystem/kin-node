@@ -1,6 +1,6 @@
 {
   "name": "@kinecosystem/kin-sdk-v2",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Kin Node SDK",
   "author": "Kik Engineering",
   "email": "engineering@kik.com",
