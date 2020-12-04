@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.3.6](https://github.com/kinecosystem/kin-node/releases/tag/0.3.6)
+- Add optional `accountResolution` parameter to `Client.getBalance`
+
+## [0.3.5](https://github.com/kinecosystem/kin-node/releases/tag/0.3.5)
+- Create new accounts with different token account address
+
 ## [0.3.4](https://github.com/kinecosystem/kin-node/releases/tag/0.3.4)
 - Do not reject Kin 4 payments with channel set
 - Check for duplicate signers for Stellar transactions
@@ -20,7 +26,7 @@
 - Rename `txHash` to `txId` in `Client.getTransaction`, `TransactionData` and `EarnResult`
 - Add `defaultCommitment` to `ClientConfig`
 - Add optional `commitment` parameter to `Client` methods (`createAccount`, `getBalance`, `getTransaction`, `submitPayment`, `submitEarnBatch`)
-- Add optional `subsidizer` parameter to `Client.create_account`, `Payment`, and `EarnBatch`
+- Add optional `subsidizer` parameter to `Client.createAcount`, `Payment`, and `EarnBatch`
 - Add optional `senderResolution` and `destinationResolution` parameters to `Client.submitPayment` and `Client.submitEarnBatch`
 - Mark `tx_hash` property in `Event` as deprecated.
 - Mark `SignTransactionRequest.txHash()` as deprecated in favour of `SignTransactionRequest.txId()`.
