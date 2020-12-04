@@ -7,7 +7,7 @@ import { mock, instance, when, anything, verify } from "ts-mockito";
 import { PublicKey as SolanaPublicKey, Transaction as SolanaTransaction} from "@solana/web3.js";
 
 import accountpb from "@kinecosystem/agora-api/node/account/v3/account_service_pb";
-import accountpbv4 from "@kinecosystem/agora-api/node/account/v4/account_service_pb";
+import accountpbv4, { ResolveTokenAccountsRequest } from "@kinecosystem/agora-api/node/account/v4/account_service_pb";
 import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
@@ -1082,6 +1082,48 @@ test("client account management Kin 4", async () => {
     } catch (err) {
         expect(err).toBeInstanceOf(AccountExists);
     }
+
+    expect(await client.getBalance(account.publicKey())).toStrictEqual(new BigNumber(10));
+});
+
+test("getBalance Kin 4 with account resolution", async () => {
+    const internal = mock(InternalClient);
+
+    const account = PrivateKey.random();
+    const resolvedAccount = PrivateKey.random();
+    const accountBalances = new Map<string, BigNumber>([
+        [resolvedAccount.publicKey().toBase58(), new BigNumber(10)],
+    ]);
+
+
+    when(internal.resolveTokenAccounts(anything()))
+        .thenCall((key: PublicKey) => {
+            if (key.toBase58() == account.publicKey().toBase58()) {
+                return Promise.resolve([resolvedAccount.publicKey()]);
+            }
+        
+            return Promise.resolve([]);
+        });
+    
+    
+    when(internal.getSolanaAccountInfo(anything(), anything()))
+        .thenCall((key: PublicKey) => {
+            const balance = accountBalances.get(key.toBase58());
+            if (!balance) {
+                throw new AccountDoesNotExist();
+            }
+
+            const account_info = new accountpbv4.AccountInfo();
+            account_info.setBalance(balance.toString());
+            return Promise.resolve(account_info);
+        });
+
+
+    const client = new Client(Environment.Test, {
+        appIndex: 0,
+        internal: instance(internal),
+        kinVersion: 4,
+    });
 
     expect(await client.getBalance(account.publicKey())).toStrictEqual(new BigNumber(10));
 });

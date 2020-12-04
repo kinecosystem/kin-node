@@ -248,33 +248,39 @@ export class Client {
     //
     // Promise.reject(new AccountDoesNotExist()) is called if
     // the specified account does not exist.
-    async getBalance(account: PublicKey, commitment: Commitment = this.defaultCommitment): Promise<BigNumber> {
-        const fn = async (): Promise<BigNumber> => {
+    async getBalance(account: PublicKey, commitment: Commitment = this.defaultCommitment, accountResolution: AccountResolution = AccountResolution.Preferred): Promise<BigNumber> {
+        if (this.kinVersion > 4 || this.kinVersion < 2) {
+            return Promise.reject("unsupported kin version: " + this.kinVersion);
+        }
+
+        if (this.kinVersion < 4) {
             try {
-                const accountInfo = await this.internal.getAccountInfo(account);
-                return Promise.resolve(new BigNumber(accountInfo.getBalance()));
+                return this.internal.getAccountInfo(account)
+                    .then(info => new BigNumber(info.getBalance()));
             } catch (err) {
                 if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
                     this.kinVersion = 4;
                     this.internal.setKinVersion(4);
-                    
-                    const accountInfo = await this.internal.getSolanaAccountInfo(account, commitment);
-                    return Promise.resolve(new BigNumber(accountInfo.getBalance()));
+                } else {
+                    return Promise.reject(err);
                 }
-                
-                return Promise.reject(err);
             }
-        };
-
-        switch (this.kinVersion) {
-            case 2:
-            case 3:
-                return fn();
-            case 4:
-                return this.internal.getSolanaAccountInfo(account, commitment)
-                    .then(info => new BigNumber(info.getBalance()));
-            default:
-                return Promise.reject("unsupported kin version: " + this.kinVersion);
+        }
+        
+        try {
+            return this.internal.getSolanaAccountInfo(account, commitment)
+                .then(info => new BigNumber(info.getBalance()));
+        } catch (err) {
+            if (err instanceof AccountDoesNotExist) {
+                if (accountResolution == AccountResolution.Preferred) {
+                    const tokenAccounts = await this.getTokenAccounts(account);
+                    if (tokenAccounts.length > 0) {
+                        return this.internal.getSolanaAccountInfo(tokenAccounts[0], commitment)
+                            .then(info => new BigNumber(info.getBalance()));
+                    }
+                }
+            }
+            return Promise.reject(err);
         }
     }
 
@@ -548,7 +554,7 @@ export class Client {
             return Promise.reject("`resolve_token_accounts` is only available on Kin 4");
         }
 
-        return this.internal.resolveTokenAccounts(account);
+        return this.getTokenAccounts(account);
     }
 
     private partitionSolanaEarns(batch: EarnBatch, senderResolution: AccountResolution): EarnBatch[] {
