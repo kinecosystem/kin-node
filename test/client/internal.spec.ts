@@ -1335,7 +1335,7 @@ test('submitSolanaTransaction failed', async () => {
     const resp = await client.submitSolanaTransaction(transaction);
     expect(resp.TxId).toStrictEqual(sig);
     expect(resp.InvoiceErrors).toBeUndefined();
-    expect(resp.Errors?.TxError).toBeInstanceOf(BadNonce);
+    expect(resp.Errors?.OpErrors![0]).toBeInstanceOf(BadNonce);
 });
 test('submitStellarTransaction rejected', async () => {
     const env = newTestEnv(4);

@@ -477,7 +477,7 @@ export class Internal {
                             break;
                         }
                         case transactionpbv4.SubmitTransactionResponse.Result.FAILED: {
-                            result.Errors = errorsFromProto(resp.getTransactionError()!);
+                            result.Errors = errorsFromProto(tx.instructions.length, resp.getTransactionError()!);
                             break;
                         }
                         default:

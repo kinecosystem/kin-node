@@ -365,9 +365,11 @@ export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTrans
 
     let txType: TransactionType = TransactionType.Unknown;
     let stringMemo: string | undefined;
+    let instructionCount = 0;
     if (item.getSolanaTransaction()) {
         const val = item.getSolanaTransaction()!.getValue_asU8();
         const solanaTx = SolanaTransaction.from(Buffer.from(val));
+        instructionCount = solanaTx.instructions.length;
         if (solanaTx.instructions[0].programId.equals(MemoProgram.programId)) {
             const memoParams = MemoInstruction.decodeMemo(solanaTx.instructions[0]);
             let agoraMemo: Memo | undefined;
@@ -382,12 +384,16 @@ export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTrans
     }
     else if (item.getStellarTransaction()?.getEnvelopeXdr()) {
         const envelope = xdr.TransactionEnvelope.fromXDR(Buffer.from(item.getStellarTransaction()!.getEnvelopeXdr()));
+        instructionCount = envelope.v0().tx().operations().length;
         const agoraMemo = Memo.fromXdr(envelope.v0().tx().memo(), true);
         if (agoraMemo) {
             txType = agoraMemo.TransactionType();
         } else if (envelope.v0().tx().memo().switch() === xdr.MemoType.memoText()) {
             stringMemo = envelope.v0().tx().memo().text().toString();
         }
+    } else {
+        // This case *shouldn't* happen since either a solana or stellar should be set
+        throw new Error("invalid transaction");
     }
 
     const payments: ReadOnlyPayment[] = [];
@@ -408,7 +414,7 @@ export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTrans
     data.payments = payments;
 
     if (item.getTransactionError()) {
-        data.errors = errorsFromProto(item.getTransactionError()!);
+        data.errors = errorsFromProto(instructionCount, item.getTransactionError()!);
     }
 
     return data;

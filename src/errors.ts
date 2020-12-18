@@ -6,33 +6,42 @@ import { InvoiceError } from "@kinecosystem/agora-api/node/common/v3/model_pb";
 //
 // If TxError is defined, the transaction failed.
 // OpErrors may or may not be set if TxErrors is set. If set, the length of
-// OpErrors will match the number of operations in the transaction.
+// OpErrors will match the number of operations/instructions in the transaction.
 export class TransactionErrors {
     TxError?: Error;
     OpErrors?: Error[];
 }
 
-export function errorsFromProto(protoError: modelpb.TransactionError): TransactionErrors {
+export function errorsFromProto(instructionCount: number, protoError: modelpb.TransactionError): TransactionErrors {
     const errors = new TransactionErrors();
+    let err: Error;
     switch (protoError.getReason()) {
         case modelpb.TransactionError.Reason.NONE:
             return errors;
         case modelpb.TransactionError.Reason.UNAUTHORIZED:
-            errors.TxError = new InvalidSignature();
+            err = new InvalidSignature();
             break;
         case modelpb.TransactionError.Reason.BAD_NONCE:
-            errors.TxError = new BadNonce();
+            err = new BadNonce();
             break;
         case modelpb.TransactionError.Reason.INSUFFICIENT_FUNDS:
-            errors.TxError = new InsufficientBalance();
+            err = new InsufficientBalance();
             break;
         case modelpb.TransactionError.Reason.INVALID_ACCOUNT:
-            errors.TxError = new AccountDoesNotExist();
+            err = new AccountDoesNotExist();
             break;
         default:
-            errors.TxError = Error("unknown error reason: " + protoError.getReason());
+            err = Error("unknown error reason: " + protoError.getReason());
             break;
     }
+
+    if (protoError.getInstructionIndex() >= 0) {
+        errors.OpErrors = new Array<Error>(instructionCount);
+        errors.OpErrors[protoError.getInstructionIndex()] = err;
+    } else {
+        errors.TxError = err;
+    }
+    
     return errors;
 }
 

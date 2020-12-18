@@ -173,22 +173,27 @@ test("errorsFromProto", () => {
     const testCases = [
         {
             reason: modelpb.TransactionError.Reason.NONE,
+            index: -1,
             expected: undefined,
         },
         {
             reason: modelpb.TransactionError.Reason.UNAUTHORIZED,
+            index: -1,
             expected: InvalidSignature,
         },
         {
             reason: modelpb.TransactionError.Reason.BAD_NONCE,
+            index: -1,
             expected: BadNonce,
         },
         {
             reason: modelpb.TransactionError.Reason.INSUFFICIENT_FUNDS,
+            index: 0,
             expected: InsufficientBalance,
         },
         {
             reason: modelpb.TransactionError.Reason.INVALID_ACCOUNT,
+            index: 2,
             expected: AccountDoesNotExist,
         },
     ];
@@ -196,12 +201,21 @@ test("errorsFromProto", () => {
     testCases.forEach((tc) => {
         const protoError = new modelpb.TransactionError();
         protoError.setReason(tc.reason);
-        const errorResult = errorsFromProto(protoError);
+        protoError.setInstructionIndex(tc.index);
+        const errorResult = errorsFromProto(3, protoError);
         if (tc.expected) {
-            expect(errorResult.TxError).toBeInstanceOf(tc.expected);
+            if (tc.index >= 0) {
+                expect(errorResult.TxError).toBeUndefined();
+                expect(errorResult.OpErrors).toBeDefined();
+                expect(errorResult.OpErrors!).toHaveLength(3);
+                expect(errorResult.OpErrors![tc.index]).toBeInstanceOf(tc.expected);
+            } else {
+                expect(errorResult.OpErrors).toBeUndefined();
+                expect(errorResult.TxError).toBeInstanceOf(tc.expected);
+            }
         } else {
             expect(errorResult.TxError).toBeUndefined();
+            expect(errorResult.OpErrors).toBeUndefined();
         }
-        expect(errorResult.OpErrors).toBeUndefined();
     });
 });
