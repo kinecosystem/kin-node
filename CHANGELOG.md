@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## [0.3.7](https://github.com/kinecosystem/kin-node/releases/tag/0.3.7)
+- Fix client error handling
+
 ## [0.3.6](https://github.com/kinecosystem/kin-node/releases/tag/0.3.6)
 - Add optional `accountResolution` parameter to `Client.getBalance`
 
