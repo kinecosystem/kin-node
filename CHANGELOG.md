@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## [0.3.8](https://github.com/kinecosystem/kin-node/releases/tag/0.3.8)
+- Set operation errors on `TransactionErrors`
+
 ## [0.3.7](https://github.com/kinecosystem/kin-node/releases/tag/0.3.7)
 - Fix client error handling
 
