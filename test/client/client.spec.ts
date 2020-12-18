@@ -1110,7 +1110,7 @@ test("getBalance Kin 4 with account resolution", async () => {
         .thenCall((key: PublicKey) => {
             const balance = accountBalances.get(key.toBase58());
             if (!balance) {
-                throw new AccountDoesNotExist();
+                return Promise.reject(new AccountDoesNotExist());
             }
 
             const account_info = new accountpbv4.AccountInfo();
@@ -2242,7 +2242,7 @@ test("createAccount migration", async () => {
                 code: grpc.status.FAILED_PRECONDITION,
             };
             
-            throw err;
+            return Promise.reject(err);
         });
 
     when(internal.createSolanaAccount(anything(), anything(), anything()))
@@ -2280,7 +2280,7 @@ test("getBalance migration", async () => {
                 code: grpc.status.FAILED_PRECONDITION,
             };
             
-            throw err;
+            return Promise.reject(err);
         });
 
     when(internal.getSolanaAccountInfo(anything(), anything()))
@@ -2335,7 +2335,7 @@ test("submitPayment migration", async() => {
                 code: grpc.status.FAILED_PRECONDITION,
             };
             
-            throw err;
+            return Promise.reject(err);
         });
 
     interface submitRequest {

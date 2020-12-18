@@ -216,25 +216,22 @@ export class Client {
     // Promise.reject(new AccountExists()) is called if
     // the account already exists.
     async createAccount(key: PrivateKey, commitment: Commitment = this.defaultCommitment, subsidizer?: PrivateKey): Promise<void> {
-        const fn = async (): Promise<void> => {
-            try {
-                await this.internal.createStellarAccount(key);
-            } catch (err) {
-                if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
-                    this.kinVersion = 4;
-                    this.internal.setKinVersion(4);
-                    
-                    return this.internal.createSolanaAccount(key, commitment, subsidizer);
-                }
-                
-                return Promise.reject(err);
-            }
-        };
-
         switch (this.kinVersion) {
             case 2:
             case 3:
-                return fn();
+                return this.internal.createStellarAccount(key)
+                    .catch(err => {
+                        if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
+                            this.kinVersion = 4;
+                            this.internal.setKinVersion(4);
+
+                            return retryAsync(async() => {
+                                return this.internal.createSolanaAccount(key, commitment, subsidizer);
+                            }, limit(this.retryConfig.maxNonceRefreshes), retriableErrors(BadNonce));
+                        }
+
+                        return Promise.reject(err);
+                    });
             case 4:
                 return retryAsync(async() => {
                     return this.internal.createSolanaAccount(key, commitment, subsidizer);
@@ -253,35 +250,40 @@ export class Client {
             return Promise.reject("unsupported kin version: " + this.kinVersion);
         }
 
-        if (this.kinVersion < 4) {
-            try {
-                return this.internal.getAccountInfo(account)
-                    .then(info => new BigNumber(info.getBalance()));
-            } catch (err) {
-                if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
-                    this.kinVersion = 4;
-                    this.internal.setKinVersion(4);
-                } else {
-                    return Promise.reject(err);
-                }
-            }
-        }
-        
-        try {
+        const solanaFn = async (): Promise<BigNumber> => {
             return this.internal.getSolanaAccountInfo(account, commitment)
-                .then(info => new BigNumber(info.getBalance()));
-        } catch (err) {
-            if (err instanceof AccountDoesNotExist) {
-                if (accountResolution == AccountResolution.Preferred) {
-                    const tokenAccounts = await this.getTokenAccounts(account);
-                    if (tokenAccounts.length > 0) {
-                        return this.internal.getSolanaAccountInfo(tokenAccounts[0], commitment)
-                            .then(info => new BigNumber(info.getBalance()));
+                .then(info => new BigNumber(info.getBalance()))
+                .catch(err => {
+                    if (err instanceof AccountDoesNotExist) {
+                        if (accountResolution == AccountResolution.Preferred) {
+                            return this.getTokenAccounts(account)
+                                .then(accounts => {
+                                    if (accounts.length > 0) {
+                                        return this.internal.getSolanaAccountInfo(accounts[0], commitment)
+                                            .then(info => new BigNumber(info.getBalance()));
+                                    }
+                                    return Promise.reject(err);
+                                });
+                        }
                     }
-                }
-            }
-            return Promise.reject(err);
+                    return Promise.reject(err);
+                });
+        };
+
+        if (this.kinVersion < 4) {
+            return this.internal.getAccountInfo(account)
+                .then(info => new BigNumber(info.getBalance()))
+                .catch(err => {
+                    if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
+                        this.kinVersion = 4;
+                        this.internal.setKinVersion(4);
+                        return solanaFn();
+                    }
+                    return Promise.reject(err);
+                });
         }
+
+        return solanaFn();
     }
 
     // getTransaction retrieves the TransactionData for a txId.
@@ -372,18 +374,15 @@ export class Client {
             });
 
             // TODO: handle version
-            try {
-                result = await this.signAndSubmit(signers, [op], memo, invoiceList);
-            } catch (err) {
-                if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
-                    this.kinVersion = 4;
-                    this.internal.setKinVersion(4);
-                    
-                    result = await this.submitPaymentWithResolution(payment, commitment, senderResolution, destinationResolution);
-                } else {
+            result = await this.signAndSubmit(signers, [op], memo, invoiceList)
+                .catch(err => {
+                    if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
+                        this.kinVersion = 4;
+                        this.internal.setKinVersion(4);
+                        return this.submitPaymentWithResolution(payment, commitment, senderResolution, destinationResolution);
+                    }
                     return Promise.reject(err);
-                }
-            }
+                });            
         }
 
         if (result.Errors && result.Errors.OpErrors) {
