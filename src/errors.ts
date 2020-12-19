@@ -74,12 +74,10 @@ export function errorsFromStellarTx(env: xdr.TransactionEnvelope, protoError: mo
         for (let i = 0; i < ops.length; i++) {
             if (ops[i].body().switch() === xdr.OperationType.payment()) {
                 pCount++;
-            } else {
-                if (i < protoError.getInstructionIndex()) {
-                    pIndex--;
-                } else if (i == protoError.getInstructionIndex()) {
-                    pIndex = -1;
-                }
+            } else if (i < protoError.getInstructionIndex()) {
+                pIndex--;
+            } else if (i == protoError.getInstructionIndex()) {
+                pIndex = -1;
             }
         }
 

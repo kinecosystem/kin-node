@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## [0.3.9](https://github.com/kinecosystem/kin-node/releases/tag/0.3.9)
+- Add `PaymentErrors` on `TransactionErrors`
+- Fix parsing transaction error in `Client.submitPayment`
+
 ## [0.3.8](https://github.com/kinecosystem/kin-node/releases/tag/0.3.8)
 - Set operation errors on `TransactionErrors`
 
