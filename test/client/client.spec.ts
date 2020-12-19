@@ -415,6 +415,9 @@ test("submitPayment failure", async() => {
                     TxError: new TransactionFailed(),
                     OpErrors: [
                         new InsufficientBalance(),
+                    ],
+                    PaymentErrors: [
+                        new InsufficientBalance(),
                     ]
                 }
             });
@@ -820,11 +823,11 @@ test("submitEarnBatch failures", async() => {
     failAfter = 1;
     failWith = {
         TxError: new TransactionFailed(),
-        OpErrors: new Array<Error>(100),
+        PaymentErrors: new Array<Error>(100),
     };
     for (let i = 0; i < 100; i++) {
         if (i%2 == 0) {
-            failWith.OpErrors![i] = new InsufficientBalance();
+            failWith.PaymentErrors![i] = new InsufficientBalance();
         }
     }
     result = await client.submitEarnBatch({
@@ -1663,7 +1666,10 @@ test("submitPayment Kin 4 failure", async() => {
                     TxError: new TransactionFailed(),
                     OpErrors: [
                         new InsufficientBalance(),
-                    ]
+                    ],
+                    PaymentErrors: [
+                        new InsufficientBalance(),
+                    ],
                 }
             });
         });
@@ -2206,11 +2212,11 @@ test("submitEarnBatch Kin 4 failures", async() => {
     failAfter = 1;
     failWith = {
         TxError: new TransactionFailed(),
-        OpErrors: new Array<Error>(18),
+        PaymentErrors: new Array<Error>(18),
     };
     for (let i = 0; i < 18; i++) {
         if (i%2 == 0) {
-            failWith.OpErrors![i] = new InsufficientBalance();
+            failWith.PaymentErrors![i] = new InsufficientBalance();
         }
     }
     result = await client.submitEarnBatch({

@@ -35,7 +35,7 @@ import {
     paymentsFromEnvelope,
     TransactionState,
 } from "../";
-import { errorsFromXdr, AccountDoesNotExist, AccountExists, TransactionRejected, InsufficientBalance, errorsFromProto, PayerRequired, NoSubsidizerError, AlreadySubmitted, nonRetriableErrors as nonRetriableErrorsList, BadNonce, NoTokenAccounts } from "../errors";
+import { errorsFromXdr, AccountDoesNotExist, AccountExists, TransactionRejected, InsufficientBalance, errorsFromSolanaTx, PayerRequired, NoSubsidizerError, AlreadySubmitted, nonRetriableErrors as nonRetriableErrorsList, BadNonce, NoTokenAccounts } from "../errors";
 import { ShouldRetry, retryAsync, limit, nonRetriableErrors } from "../retry";
 import BigNumber from "bignumber.js";
 import { Transaction } from "@solana/web3.js";
@@ -477,7 +477,7 @@ export class Internal {
                             break;
                         }
                         case transactionpbv4.SubmitTransactionResponse.Result.FAILED: {
-                            result.Errors = errorsFromProto(tx.instructions.length, resp.getTransactionError()!);
+                            result.Errors = errorsFromSolanaTx(tx, resp.getTransactionError()!);
                             break;
                         }
                         default:

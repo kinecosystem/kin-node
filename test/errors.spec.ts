@@ -12,8 +12,14 @@ import {
     DestinationDoesNotExist,
     AccountExists,
     AccountDoesNotExist,
-    errorsFromProto
+    errorFromProto,
+    errorsFromSolanaTx,
+    errorsFromStellarTx,
 } from "../src/errors";
+import { Transaction as SolanaTransaction } from "@solana/web3.js";
+import { PublicKey, PrivateKey } from "../src";
+import { AuthorityType, TokenProgram } from "../src/solana/token-program";
+import { MemoProgram } from "../src/solana/memo-program";
 
 test("parse no errors", () => {
     const resultResult = xdr.TransactionResultResult.txSuccess([
@@ -169,31 +175,26 @@ test("operation errors", () => {
     expect(errorResult.OpErrors![expected.length + 1]).toBeUndefined();
 });
 
-test("errorsFromProto", () => {
+test("errorFromProto", () => {
     const testCases = [
         {
             reason: modelpb.TransactionError.Reason.NONE,
-            index: -1,
             expected: undefined,
         },
         {
             reason: modelpb.TransactionError.Reason.UNAUTHORIZED,
-            index: -1,
             expected: InvalidSignature,
         },
         {
             reason: modelpb.TransactionError.Reason.BAD_NONCE,
-            index: -1,
             expected: BadNonce,
         },
         {
             reason: modelpb.TransactionError.Reason.INSUFFICIENT_FUNDS,
-            index: 0,
             expected: InsufficientBalance,
         },
         {
             reason: modelpb.TransactionError.Reason.INVALID_ACCOUNT,
-            index: 2,
             expected: AccountDoesNotExist,
         },
     ];
@@ -201,21 +202,130 @@ test("errorsFromProto", () => {
     testCases.forEach((tc) => {
         const protoError = new modelpb.TransactionError();
         protoError.setReason(tc.reason);
-        protoError.setInstructionIndex(tc.index);
-        const errorResult = errorsFromProto(3, protoError);
+        const error = errorFromProto(protoError);
         if (tc.expected) {
-            if (tc.index >= 0) {
-                expect(errorResult.TxError).toBeUndefined();
-                expect(errorResult.OpErrors).toBeDefined();
-                expect(errorResult.OpErrors!).toHaveLength(3);
-                expect(errorResult.OpErrors![tc.index]).toBeInstanceOf(tc.expected);
+            expect(error).toBeInstanceOf(tc.expected);
+        } else {
+            expect(error).toBeUndefined();
+        }
+    });
+});
+
+test("errorFromSolanaTx", () => {
+    const tokenProgram = PrivateKey.random().publicKey().solanaKey();
+    const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
+    const tx = new SolanaTransaction({ 
+        feePayer: sender.solanaKey(),
+    }).add(
+        MemoProgram.memo({data: "data"}),
+        TokenProgram.transfer({
+            source: sender.solanaKey(),
+            dest: destination.solanaKey(),
+            owner: sender.solanaKey(),
+            amount: BigInt(100),
+        }, tokenProgram),
+        TokenProgram.setAuthority({
+            account: sender.solanaKey(),
+            currentAuthority: sender.solanaKey(),
+            newAuthority: destination.solanaKey(),
+            authorityType: AuthorityType.AccountHolder,
+        }, tokenProgram)
+    );
+
+    const testCases = [
+        {
+            index: 1,
+            expectedOpIndex: 1,
+            expectedPaymentIndex: 0 
+        },
+        {
+            index: 0,
+            expectedOpIndex: 0,
+            expectedPaymentIndex: -1
+        },
+    ];
+    testCases.forEach(tc => {
+        const protoError = new modelpb.TransactionError();
+        protoError.setReason(modelpb.TransactionError.Reason.INVALID_ACCOUNT);
+        protoError.setInstructionIndex(tc.index);
+
+        const errors = errorsFromSolanaTx(tx, protoError);
+        expect(errors.TxError).toBeInstanceOf(AccountDoesNotExist);
+        
+        expect(errors.OpErrors).toBeDefined();
+        expect(errors.OpErrors!.length).toEqual(3);
+        for (let i = 0; i < errors.OpErrors!.length; i++) {
+            if (i == tc.expectedOpIndex) {
+                expect(errors.OpErrors![i]).toBeInstanceOf(AccountDoesNotExist);
             } else {
-                expect(errorResult.OpErrors).toBeUndefined();
-                expect(errorResult.TxError).toBeInstanceOf(tc.expected);
+                expect(errors.OpErrors![i]).toBeUndefined();
+            }
+        }
+
+        if (tc.expectedPaymentIndex > -1) {
+            expect(errors.PaymentErrors).toBeDefined();
+            expect(errors.PaymentErrors!.length).toEqual(1);  // exclude memo instruction + auth instruction
+            for (let i = 0; i < errors.PaymentErrors!.length; i++) {
+                if (i == tc.expectedPaymentIndex) {
+                    expect(errors.PaymentErrors![i]).toBeInstanceOf(AccountDoesNotExist);
+                } else {
+                    expect(errors.OpErrors![i]).toBeUndefined();
+                }
             }
         } else {
-            expect(errorResult.TxError).toBeUndefined();
-            expect(errorResult.OpErrors).toBeUndefined();
+            expect(errors.PaymentErrors).toBeUndefined();
+        }
+    });
+});
+
+test("errorFromStellarTx", () => {
+    // create, payment, payment, create
+    const xdrBytes = "AAAAAMrPQ1diKVqce6E5xOuL76CmGyd/hDnbxB5NdvHkCD+/AAAAAAAAAAAAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAADaGV5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAQAAAADKz0NXYilanHuhOcTri++gphsnf4Q528QeTXbx5Ag/vwAAAAAAAAAAK+sG64+oMh1NtRMr5w8B8LotsAwIdka6k1dzgATUL4oAAAAAAAAACgAAAAAAAAABAAAAACvrBuuPqDIdTbUTK+cPAfC6LbAMCHZGupNXc4AE1C+KAAAAAAAAAAAAAAAPAAAAAAAAAAEAAAAAK+sG64+oMh1NtRMr5w8B8LotsAwIdka6k1dzgATUL4oAAAAAAAAAAAAAAA8AAAABAAAAAMrPQ1diKVqce6E5xOuL76CmGyd/hDnbxB5NdvHkCD+/AAAAAAAAAAAr6wbrj6gyHU21EyvnDwHwui2wDAh2RrqTV3OABNQvigAAAAAAAAAKAAAAAAAAAAF4eHh4AAAACXNpZ25hdHVyZQAAAA==";
+    const env = xdr.TransactionEnvelope.fromXDR(Buffer.from(xdrBytes, "base64"));
+
+    const testCases = [
+        {
+            index: 2,
+            expectedOpIndex: 2,
+            expectedPaymentIndex: 1,
+        },
+        {
+            index: 3,
+            expectedOpIndex: 3,
+            expectedPaymentIndex: -1,
+        }
+    ];
+
+    testCases.forEach(tc => {
+        const protoError = new modelpb.TransactionError();
+        protoError.setReason(modelpb.TransactionError.Reason.INVALID_ACCOUNT);
+        protoError.setInstructionIndex(tc.index);
+
+        const errors = errorsFromStellarTx(env, protoError);
+        expect(errors.TxError).toBeInstanceOf(AccountDoesNotExist);
+        
+        expect(errors.OpErrors).toBeDefined();
+        expect(errors.OpErrors!.length).toEqual(4);
+        for (let i = 0; i < errors.OpErrors!.length; i++) {
+            if (i == tc.expectedOpIndex) {
+                expect(errors.OpErrors![i]).toBeInstanceOf(AccountDoesNotExist);
+            } else {
+                expect(errors.OpErrors![i]).toBeUndefined();
+            }
+        }
+
+        if (tc.expectedPaymentIndex > -1) {
+            expect(errors.PaymentErrors).toBeDefined();
+            expect(errors.PaymentErrors!.length).toEqual(2);  // exclude memo instruction
+            for (let i = 0; i < errors.PaymentErrors!.length; i++) {
+                if (i == tc.expectedPaymentIndex) {
+                    expect(errors.PaymentErrors![i]).toBeInstanceOf(AccountDoesNotExist);
+                } else {
+                    expect(errors.OpErrors![i]).toBeUndefined();
+                }
+            }
+        } else {
+            expect(errors.PaymentErrors).toBeUndefined();
         }
     });
 });

@@ -1,48 +1,112 @@
 import { xdr } from "stellar-base";
 import modelpb from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import { InvoiceError } from "@kinecosystem/agora-api/node/common/v3/model_pb";
+import { Transaction } from "@solana/web3.js";
+import { TokenInstruction } from "./solana/token-program";
 
 // TransactionErrors contains the error details for a transaction.
 //
-// If TxError is defined, the transaction failed.
-// OpErrors may or may not be set if TxErrors is set. If set, the length of
-// OpErrors will match the number of operations/instructions in the transaction.
 export class TransactionErrors {
+    // If TxError is defined, the transaction failed.
     TxError?: Error;
+    
+    // OpErrors may or may not be set if TxErrors is set. If set, the length of
+    // OpErrors will match the number of operations/instructions in the transaction.
     OpErrors?: Error[];
+
+    // PaymentErrors may or may not be set if TxErrors is set. If set, the length of 
+    // PaymentErrors will match the number of payments/transfers in the transaction.
+    PaymentErrors?: Error[];
 }
 
-export function errorsFromProto(instructionCount: number, protoError: modelpb.TransactionError): TransactionErrors {
+export function errorsFromSolanaTx(tx: Transaction, protoError: modelpb.TransactionError): TransactionErrors {
     const errors = new TransactionErrors();
-    let err: Error;
-    switch (protoError.getReason()) {
-        case modelpb.TransactionError.Reason.NONE:
-            return errors;
-        case modelpb.TransactionError.Reason.UNAUTHORIZED:
-            err = new InvalidSignature();
-            break;
-        case modelpb.TransactionError.Reason.BAD_NONCE:
-            err = new BadNonce();
-            break;
-        case modelpb.TransactionError.Reason.INSUFFICIENT_FUNDS:
-            err = new InsufficientBalance();
-            break;
-        case modelpb.TransactionError.Reason.INVALID_ACCOUNT:
-            err = new AccountDoesNotExist();
-            break;
-        default:
-            err = Error("unknown error reason: " + protoError.getReason());
-            break;
+    const err = errorFromProto(protoError);
+    if (!err) {
+        return errors;
     }
-
+    
+    errors.TxError = err;
     if (protoError.getInstructionIndex() >= 0) {
-        errors.OpErrors = new Array<Error>(instructionCount);
+        errors.OpErrors = new Array<Error>(tx.instructions.length);
         errors.OpErrors[protoError.getInstructionIndex()] = err;
-    } else {
-        errors.TxError = err;
+
+        let pIndex = protoError.getInstructionIndex();
+        let pCount = 0;
+
+        for (let i = 0; i < tx.instructions.length; i++) {
+            try {
+                TokenInstruction.decodeTransfer(tx.instructions[i]);
+                pCount++;
+            } catch (err) {
+                if (i < protoError.getInstructionIndex()) {
+                    pIndex--;
+                } else if (i == protoError.getInstructionIndex()) {
+                    // the errored instruction is not a payment
+                    pIndex = -1;
+                }
+            }
+        }
+        if (pIndex > -1) {
+            errors.PaymentErrors = new Array<Error>(pCount);
+            errors.PaymentErrors[pIndex] = err;
+        }
     }
     
     return errors;
+}
+
+export function errorsFromStellarTx(env: xdr.TransactionEnvelope, protoError: modelpb.TransactionError): TransactionErrors {
+    const errors = new TransactionErrors();
+    const err = errorFromProto(protoError);
+    if (!err) {
+        return errors;
+    }
+    
+    errors.TxError = err;
+    if (protoError.getInstructionIndex() >= 0) {
+        const ops = env.v0().tx().operations();
+        errors.OpErrors = new Array<Error>(ops.length);
+        errors.OpErrors[protoError.getInstructionIndex()] = err;
+
+        let pIndex = protoError.getInstructionIndex();
+        let pCount = 0;
+        for (let i = 0; i < ops.length; i++) {
+            if (ops[i].body().switch() === xdr.OperationType.payment()) {
+                pCount++;
+            } else {
+                if (i < protoError.getInstructionIndex()) {
+                    pIndex--;
+                } else if (i == protoError.getInstructionIndex()) {
+                    pIndex = -1;
+                }
+            }
+        }
+
+        if (pIndex > -1) {
+            errors.PaymentErrors = new Array<Error>(pCount);
+            errors.PaymentErrors[pIndex] = err;
+        }
+    }
+
+    return errors;
+}
+
+export function errorFromProto(protoError: modelpb.TransactionError): Error | undefined {
+    switch (protoError.getReason()) {
+        case modelpb.TransactionError.Reason.NONE:
+            return undefined;
+        case modelpb.TransactionError.Reason.UNAUTHORIZED:
+            return new InvalidSignature();
+        case  modelpb.TransactionError.Reason.BAD_NONCE:
+            return new BadNonce();
+        case modelpb.TransactionError.Reason.INSUFFICIENT_FUNDS:
+            return new InsufficientBalance();
+        case modelpb.TransactionError.Reason.INVALID_ACCOUNT:
+            return new AccountDoesNotExist();
+        default:
+            return Error("unknown error reason: " + protoError.getReason());
+    }
 }
 
 export function errorsFromXdr(result: xdr.TransactionResult): TransactionErrors {

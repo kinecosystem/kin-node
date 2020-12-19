@@ -385,12 +385,12 @@ export class Client {
                 });            
         }
 
-        if (result.Errors && result.Errors.OpErrors) {
-            if (result.Errors.OpErrors.length != 1) {
-                return Promise.reject(new Error("invalid number of operation errors. expected 0 or 1"));
+        if (result.Errors && result.Errors.PaymentErrors) {
+            if (result.Errors.PaymentErrors.length != 1) {
+                return Promise.reject(new Error("invalid number of payemnt errors. expected 0 or 1"));
             }
 
-            return Promise.reject(result.Errors.OpErrors[0]);
+            return Promise.reject(result.Errors.PaymentErrors[0]);
         }
         if (result.Errors && result.Errors.TxError) {
             return Promise.reject(result.Errors.TxError);
@@ -513,12 +513,12 @@ export class Client {
 
             // If there was operation level errors, we set the individual results
             // for this batch, and then mark the rest of the earns as aborted.
-            if (result.Errors.OpErrors) {
-                for (let j = 0; j < result.Errors.OpErrors.length; j++) {
+            if (result.Errors.PaymentErrors) {
+                for (let j = 0; j < result.Errors.PaymentErrors.length; j++) {
                     batchResult.failed.push({
                         txId: result.TxId,
                         earn: b.earns[j],
-                        error: result.Errors.OpErrors[j],
+                        error: result.Errors.PaymentErrors[j],
                     });
                 }
             } else {
