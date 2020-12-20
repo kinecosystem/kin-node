@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import { BigNumber } from "bignumber.js";
 import { mock, when, anything, instance, verify, reset } from "ts-mockito";
 import { PublicKey as SolanaPublicKey, SystemInstruction, Transaction as SolanaTransaction } from "@solana/web3.js"; 
+import { v4 as uuidv4 } from 'uuid';
 import bs58 from "bs58";
 
 import accountpb from "@kinecosystem/agora-api/node/account/v3/account_service_pb";
@@ -1184,8 +1185,10 @@ test('submitSolanaTransaction', async () => {
 
     let invoiceList: commonpb.InvoiceList | undefined = undefined;
 
+    let submitted: transactionpbv4.SubmitTransactionRequest | undefined;
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((req: transactionpbv4.SubmitTransactionRequest, md: grpc.Metadata, callback) => {
+            submitted = req;
             const err = validateHeaders(md, "4");
             if (err != undefined) {
                 callback(err, undefined);
@@ -1228,6 +1231,33 @@ test('submitSolanaTransaction', async () => {
     expect(result.TxId).toStrictEqual(sig);
     expect(result.InvoiceErrors).toBeUndefined();
     expect(result.Errors).toBeUndefined();
+
+    expect(submitted).toBeDefined();
+    expect(submitted!.getTransaction()).toBeDefined();
+    expect(submitted!.getTransaction()!.getValue()).toEqual(transaction.serialize({
+        requireAllSignatures: false,
+        verifySignatures: false,
+    }));
+    expect(submitted!.getInvoiceList()).toEqual(invoiceList);
+    expect(submitted!.getCommitment()).toEqual(commonpbv4.Commitment.SINGLE);  // default
+    expect(submitted!.getDedupeId()).toEqual("");
+
+    // Submit with all options
+    const dedupeId = Buffer.from(uuidv4());
+    result = await client.submitSolanaTransaction(transaction, invoiceList, Commitment.Max, dedupeId);
+    expect(result.TxId).toStrictEqual(sig);
+    expect(result.InvoiceErrors).toBeUndefined();
+    expect(result.Errors).toBeUndefined();
+
+    expect(submitted).toBeDefined();
+    expect(submitted!.getTransaction()).toBeDefined();
+    expect(submitted!.getTransaction()!.getValue()).toEqual(transaction.serialize({
+        requireAllSignatures: false,
+        verifySignatures: false,
+    }));
+    expect(submitted!.getInvoiceList()).toEqual(invoiceList);
+    expect(submitted!.getCommitment()).toEqual(commonpbv4.Commitment.MAX);
+    expect(Buffer.from(submitted!.getDedupeId())).toEqual(dedupeId);
 });
 test('submitSolanaTransaction already submitted', async () => {
     const env = newTestEnv(4);
@@ -1337,7 +1367,7 @@ test('submitSolanaTransaction failed', async () => {
     expect(resp.InvoiceErrors).toBeUndefined();
     expect(resp.Errors?.OpErrors![0]).toBeInstanceOf(BadNonce);
 });
-test('submitStellarTransaction rejected', async () => {
+test('submitSolanaTransaction rejected', async () => {
     const env = newTestEnv(4);
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
@@ -1374,7 +1404,7 @@ test('submitStellarTransaction rejected', async () => {
         expect(err).toBeInstanceOf(TransactionRejected);
     }
 });
-test('submitStellarTransaction payer required', async () => {
+test('submitSolanaTransaction payer required', async () => {
     const env = newTestEnv(4);
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
@@ -1411,7 +1441,7 @@ test('submitStellarTransaction payer required', async () => {
         expect(err).toBeInstanceOf(PayerRequired);
     }
 });
-test('submitStellarTransaction invoice error', async () => {
+test('submitSolanaTransaction invoice error', async () => {
     const env = newTestEnv(4);
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];

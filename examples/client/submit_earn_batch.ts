@@ -27,16 +27,22 @@ async function run(): Promise<void> {
             return {
                 destination: dest,
                 quarks: kinToQuarks("1"),
-            }
-        })
-    })
-    for (let r of result.succeeded) {
-        console.log(`successfully sent 1 kin to ${r.earn.destination.stellarAddress()}`)
-    }
-    for (let r of result.failed) {
-        console.log(`failed to send 1 kin to ${r.earn.destination.stellarAddress()}`)
-    }
+            };
+        }),
+    });
 
+    if (result.txError) {
+        console.log(`failed to send earn batch (txId: ${result.txId}): ${result.txError}`);
+
+        if (result.earnErrors) {
+            result.earnErrors.forEach(e => {
+                console.log(`earn ${e.earnIndex} failed due to: ${e.error}`);
+            });
+        }
+    } else {
+        console.log(`successfully sent batch (txId: ${result.txId})`);
+    }
+    
     // Send an earn batch with 1 kin each, with invoices
     result = await client.submitEarnBatch({
         sender: sender,
@@ -52,14 +58,20 @@ async function run(): Promise<void> {
                         }
                     ],
                 }
-            }
+            };
         })
-    })
-    for (let r of result.succeeded) {
-        console.log(`successfully sent 1 kin to ${r.earn.destination.stellarAddress()}`)
-    }
-    for (let r of result.failed) {
-        console.log(`failed to send 1 kin to ${r.earn.destination.stellarAddress()}`)
+    });
+    
+    if (result.txError) {
+        console.log(`failed to send earn batch (txId: ${result.txId}): ${result.txError}`);
+
+        if (result.earnErrors) {
+            result.earnErrors.forEach(e => {
+                console.log(`earn ${e.earnIndex} failed due to: ${e.error}`);
+            });
+        }
+    } else {
+        console.log(`successfully sent batch (txId: ${result.txId})`);
     }
 }
 

@@ -208,6 +208,17 @@ export interface Payment {
 
     invoice?: Invoice
     memo?: string
+
+    // dedupeId is a unique identifier used by the service to help prevent the 
+    // accidental submission of the same intended transaction twice. 
+    
+    // If dedupeId is set, the service will check to see if a transaction
+    // was previously submitted with the same dedupeId. If one is found,
+    // it will NOT submit the transaction again, and will return the status 
+    // of the previously submitted transaction.
+    // 
+    // Only available on Kin 4.
+    dedupeId?: Buffer
 }
 
 // ReadOnlyPayment represents a payment where the sender's
@@ -420,7 +431,7 @@ export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTrans
     return data;
 }
 
-// EarnBatch is a batch of earn payments to be sent.
+// EarnBatch is a batch of earn payments to be sent in a transaction.
 export interface EarnBatch {
     sender: PrivateKey
     channel?: PrivateKey
@@ -428,7 +439,19 @@ export interface EarnBatch {
 
     memo?: string
 
+    // The length of `earns` must be less than or equal to 15.
     earns: Earn[]
+
+    // dedupeId is a unique identifier used by the service to help prevent the 
+    // accidental submission of the same intended transaction twice. 
+    
+    // If dedupeId is set, the service will check to see if a transaction
+    // was previously submitted with the same dedupeId. If one is found,
+    // it will NOT submit the transaction again, and will return the status 
+    // of the previously submitted transaction.
+    // 
+    // Only available on Kin 4.
+    dedupeId?: Buffer
 }
 
 // Earn represents a earn payment in an earn batch.
@@ -439,19 +462,22 @@ export interface Earn {
 }
 
 // EarnBatchResult contains the results from an earn batch.
-export class EarnBatchResult {
-    succeeded: EarnResult[];
-    failed: EarnResult[];
+export interface EarnBatchResult {
+    txId: Buffer
 
-    constructor() {
-        this.succeeded = [];
-        this.failed = [];
-    }
+    // If TxError is defined, the transaction failed.
+    txError?: Error
+
+    // earnErrors contains any available earn-specific error
+    // information.
+    //
+    // earnErrors may or may not be set if TxError is set. 
+    earnErrors?: EarnError[]
 }
 
-// EarnResult contains the result of a submitted earn.
-export interface EarnResult {
-    txId?: Buffer
-    earn: Earn
-    error?: Error
+export interface EarnError {
+    // The error related to an earn.
+    error: Error
+    // The index of the earn that caused the
+    earnIndex: number
 }

@@ -119,6 +119,7 @@ Additionally, it has some optional properties:
 - `commitment`: (Kin 4 only) Indicates to Solana which bank state to query. See the [website documentation](https://docs.kin.org/solana#commitment) for more details.
 - `senderResolution`: (Kin 4 only) Indicates which type of account resolution to use for the payment sender.
 - `destinationResolution`: (Kin 4 only) Indicates which type of account resolution to use for the payment destination.
+- `dedupeId`: (Kin 4 only) a unique identifier used by the service to help prevent the accidental submission of the same intended transaction twice. 
 
 #### Submit an Earn Batch
 The `submitEarnBatch` method submits a batch of earns to Agora from a single account. It batches the earns into fewer
@@ -156,6 +157,7 @@ An `EarnBatch` has the following parameters:
 - `commitment`: (Kin 4 only) Indicates to Solana which bank state to query. See the [website documentation](https://docs.kin.org/solana#commitment) for more details.
 - `senderResolution`: (Kin 4 only) Indicates which type of account resolution to use for the payment sender.
 - `destinationResolution`: (Kin 4 only) Indicates which type of account resolution to use for the payment destination.
+- `dedupeId`: (Kin 4 only) a unique identifier used by the service to help prevent the accidental submission of the same intended transaction twice. 
 
 ### Examples
 A few examples for creating an account and different ways of submitting payments and batched earns can be found in `examples/client`.

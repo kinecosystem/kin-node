@@ -27,6 +27,7 @@ import {
     Earn,
     EarnBatch,
     EarnBatchResult,
+    EarnError,
     Environment,
     invoiceToProto, Kin2Issuers, KinAssetCode,
     Memo as KinMemo,
@@ -38,7 +39,7 @@ import {
     TransactionType,
 } from "../";
 import { InternalClient, SubmitTransactionResult } from "./";
-import { AlreadyPaid, SkuNotFound, WrongDestination, BadNonce, AccountDoesNotExist, NoSubsidizerError, nonRetriableErrors as nonRetriableErrorList, NoTokenAccounts } from "../errors";
+import { AlreadyPaid, SkuNotFound, WrongDestination, BadNonce, AccountDoesNotExist, NoSubsidizerError, nonRetriableErrors as nonRetriableErrorList, NoTokenAccounts, invoiceErrorFromProto, TransactionRejected } from "../errors";
 import { retryAsync, limit, retriableErrors, backoffWithJitter, binaryExpotentialDelay, nonRetriableErrors } from "../retry";
 import { InternalClientConfig } from "./internal";
 import { MemoProgram } from "../solana/memo-program";
@@ -415,20 +416,24 @@ export class Client {
         return Promise.resolve(result.TxId);
     }
 
-    // submitEarnBatch submits an EarnBatch.
+    // submitEarnBatch submits a batch of earns in a single transaction.
     //
-    // Depending on the size of the EarnBatch, the client may break up
-    // the batch into multiple sub-batches. As a result, it is possible
-    // for partial failures to occur.
-    //
-    // If partial failures cannot be tolerated, then submitPayment with type Earn,
-    // or submitBatch with a batch size of 1 should be used.
+    // EarnBatch is limited to 15 earns, which is roughly the max number of 
+    // transfers that can fit inside a Solana transaction.
     async submitEarnBatch(
         batch: EarnBatch, commitment: Commitment = this.defaultCommitment, senderResolution: AccountResolution = AccountResolution.Preferred, 
         destinationResolution: AccountResolution = AccountResolution.Preferred
     ): Promise<EarnBatchResult> {
         if (this.kinVersion !== 4 && this.kinVersion !== 3 && this.kinVersion !== 2) {
             return Promise.reject("unsupported kin version: " + this.kinVersion);
+        }
+
+        if (batch.earns.length === 0) {
+            return Promise.reject(new Error("An EarnBatch must contain at least 1 earn."));
+        }
+
+        if (batch.earns.length > 15) {
+            return Promise.reject(new Error("An EarnBatch must not contain more than 15 earns."));
         }
 
         if (batch.memo) {
@@ -449,102 +454,48 @@ export class Client {
             }
         }
 
-        let batches: EarnBatch[];
-        let serviceConfig: transactionpbv4.GetServiceConfigResponse | undefined;
+        let submitResult: SubmitTransactionResult;
+
         if (this.kinVersion === 2 || this.kinVersion === 3) {
-            // Stellar has an operation batch size of 100, so we break apart the EarnBatch into
-            // sub-batches of 100 each.
-            batches = [];
-            for (let start = 0; start < batch.earns.length; start += 100) {
-                const end = Math.min(start+100, batch.earns.length);
-                batches.push({
-                    sender: batch.sender,
-                    channel: batch.channel,
-                    memo: batch.memo,
-                    earns: batch.earns.slice(start, end),
-                });
-            }
+            submitResult = await this.submitSingleEarnBatch(batch);
         } else {
-            batches = this.partitionSolanaEarns(batch, senderResolution);
-            serviceConfig = await this.internal.getServiceConfig();
+            const serviceConfig = await this.internal.getServiceConfig();
             if (!serviceConfig.getSubsidizerAccount() && !batch.subsidizer) {
                 return Promise.reject(new NoSubsidizerError());
             }
+            submitResult = await this.submitEarnBatchWithResolution(batch, serviceConfig, commitment, senderResolution, destinationResolution);
         }
 
-        const batchResult = new EarnBatchResult();
-
-        let unprocessedBatch = 0;
-        for (let i = 0; i < batches.length; i++) {
-            const b = batches[i];
-
-            let result: SubmitTransactionResult;
-            try {
-                if (this.kinVersion === 2 || this.kinVersion === 3) {
-                    result = await this.submitSingleEarnBatch(b);
-                } else {
-                    result = await this.submitEarnBatchWithResolution(b, serviceConfig!, commitment, senderResolution, destinationResolution);
-                }
-            } catch (err) {
-                for (let j = 0; j < b.earns.length; j++) {
-                    batchResult.failed.push({
-                        earn: b.earns[j],
-                        error: err,
-                    });
-                }
-
-                unprocessedBatch = i + 1;
-                break;
-            }
-
-            if (!result.Errors || !result.Errors.TxError) {
-                for (const r of b.earns) {
-                    batchResult.succeeded.push({
-                        txId: result.TxId,
-                        earn: r,
-                    });
-                }
-
-                unprocessedBatch = i + 1;
-                continue;
-            }
-
-            // At this point, we consider the batch failed.
-
-            // If there was operation level errors, we set the individual results
-            // for this batch, and then mark the rest of the earns as aborted.
-            if (result.Errors.PaymentErrors) {
-                for (let j = 0; j < result.Errors.PaymentErrors.length; j++) {
-                    batchResult.failed.push({
-                        txId: result.TxId,
-                        earn: b.earns[j],
-                        error: result.Errors.PaymentErrors[j],
-                    });
-                }
-            } else {
-                for (let j = 0; j < b.earns.length; j++) {
-                    batchResult.failed.push({
-                        txId: result.TxId,
-                        earn: b.earns[j],
-                        error: result.Errors.TxError,
-                    });
-                }
-            }
-
-            unprocessedBatch = i + 1;
-
-            break;
-        }
-        
-        for (let i = unprocessedBatch; i < batches.length; i++) {
-            for (const r of batches[i].earns) {
-                batchResult.failed.push({
-                    earn: r,
+        const result: EarnBatchResult = {
+            txId: submitResult.TxId,
+        };
+        if (submitResult.Errors) {
+            result.txError = submitResult.Errors.TxError;
+            
+            if (submitResult.Errors.PaymentErrors && submitResult.Errors.PaymentErrors.length > 0) {
+                result.earnErrors = new Array<EarnError>();
+                submitResult.Errors.PaymentErrors.forEach((error, i) => {
+                    if (error) {
+                        result.earnErrors!.push({
+                            error: error,
+                            earnIndex: i,
+                        });
+                    }
                 });
             }
         }
+        else if (submitResult.InvoiceErrors && submitResult.InvoiceErrors.length > 0) {
+            result.txError = new TransactionRejected();
+            result.earnErrors = new Array<EarnError>(submitResult.InvoiceErrors.length);
+            submitResult.InvoiceErrors!.forEach((invoiceError, i) => {
+                result.earnErrors![i] = {
+                    error: invoiceErrorFromProto(invoiceError),
+                    earnIndex: invoiceError.getOpIndex(),
+                };
+            });
+        }
 
-        return Promise.resolve(batchResult);
+        return Promise.resolve(result);
     }
 
     // resolveTokenAccounts resolves the token accounts ovned by the specified account on kin 4.
@@ -556,85 +507,9 @@ export class Client {
         return this.getTokenAccounts(account);
     }
 
-    private partitionSolanaEarns(batch: EarnBatch, senderResolution: AccountResolution): EarnBatch[] {
-        const includeKinMemo = (batch.memo == undefined && this.appIndex != undefined);
-        const batches: EarnBatch[] = [];
-
-        let offset = 0;
-        for (let i = 0; i < batch.earns.length + 1; i += 1) {
-            // To avoid having to re-partition earns in the case that the sender account needs to be resolved, if sender
-            // resolution is PREFERRED, include it in the estimation of the transaction size
-            const txSize = this.estimateEarnBatchTxSize(
-                batch.earns.slice(offset, i), 
-                senderResolution === AccountResolution.Preferred,
-                includeKinMemo,
-                batch.memo);
-            if (txSize > maxTxSize) {
-                batches.push({
-                    sender: batch.sender,
-                    channel: batch.channel,
-                    subsidizer: batch.subsidizer,
-                    memo: batch.memo,
-                    earns: batch.earns.slice(offset,i-1),
-                });
-                offset = i - 1;
-            } else if (txSize === maxTxSize || i === batch.earns.length) {
-                batches.push({
-                    sender: batch.sender,
-                    channel: batch.channel,
-                    subsidizer: batch.subsidizer,
-                    memo: batch.memo,
-                    earns: batch.earns.slice(offset, i)
-                });
-                offset = i;
-            }
-        }
-
-        return batches;
-    }
-
-    // estimateEarnBatchTxSize estimates the size of an earn batch transaction by adding following components:
-    // - Signatures: 1 (shortvec) + sig_count * SIGNATURE_LENGTH
-    // - Header bytes: 3
-    // - Accounts: 1 (shortvec) + account_count * ED25519_PUB_KEY_SIZE
-    // - Hash Length
-    // - For instructions:
-    //     - 1 byte (shortvec)
-    //     - (optional, if Agora memo included) Agora memo: ED25519_PUB_KEY_SIZE + 1 (program index) + 1 (account
-    //       shortvec) + 1 (data shortvec) + 44 (length of a base64-encoded Agora memo) = 79
-    //     - (optional) memo: ED25519_PUB_KEY_SIZE + 1 (program index) + 1 (account shortvec) + data shortvec +
-    //       len(data) = 34 + data shortvec + len(data)
-    //     - Each transfer: 1 (program index) + 1 (account shortvec) + 3 (3 account indices) + 1 (data shortvec) +
-    //       9 (transfer data length) = 15
-    private estimateEarnBatchTxSize(earns: Earn[], hasSeparateSender: boolean, hasAgoraMemo: boolean, memo?: string): number {
-        const uniqueDests = new Set();
-        earns.forEach(earn => {
-            uniqueDests.add(earn.destination.toBase58());
-        });
-        // unique destinations + subsidizer + owner + program + (optional) resolved transfer sender
-        const accountCount = uniqueDests.size + 3 + (hasSeparateSender ? 1 : 0);
-        // owner, subsidizer
-        const sigCount = 2;
-
-        return (
-            1 + (sigCount * 64) + 
-            3 +
-            this.estimateShortVecSize(accountCount) + (accountCount * 32) +
-            32 +
-            1 +
-            (hasAgoraMemo ? 79 : 0) +
-            (memo ? (34 + this.estimateShortVecSize(memo.length) + memo.length) : 0) + 
-            (earns.length * 15)
-        );
-    }
-
-    private estimateShortVecSize(length: number): number {
-        return (length < 128 ? 1 : (length < 16384 ? 2 : 3));
-    }
-
     private async submitPaymentWithResolution(
         payment: Payment, commitment: Commitment, senderResolution: AccountResolution = AccountResolution.Preferred, 
-        destinationResolution: AccountResolution = AccountResolution.Preferred
+        destinationResolution: AccountResolution = AccountResolution.Preferred,
     ): Promise<SubmitTransactionResult> {
         const serviceConfig = await this.internal.getServiceConfig();
         if (!serviceConfig.getSubsidizerAccount() && !payment.subsidizer) {
@@ -671,7 +546,7 @@ export class Client {
     }
 
     private async submitSolanaPayment(
-        payment: Payment, serviceConfig: transactionpbv4.GetServiceConfigResponse, commitment: Commitment, transferSender?: PublicKey
+        payment: Payment, serviceConfig: transactionpbv4.GetServiceConfigResponse, commitment: Commitment, transferSender?: PublicKey,
     ): Promise<SubmitTransactionResult> {
         const tokenProgram = new PublicKey(Buffer.from(serviceConfig.getTokenProgram()!.getValue_asU8()));
 
@@ -723,7 +598,7 @@ export class Client {
             feePayer: subsidizerKey,
         }).add(...instructions);
 
-        return this.signAndSubmitSolanaTx(signers, tx, commitment, invoiceList);
+        return this.signAndSubmitSolanaTx(signers, tx, commitment, invoiceList, payment.dedupeId);
     }
 
     private async submitEarnBatchWithResolution(
@@ -824,7 +699,7 @@ export class Client {
             feePayer: subsidizerId,
         }).add(...instructions);
 
-        return this.signAndSubmitSolanaTx(signers, tx, commitment, invoiceList);
+        return this.signAndSubmitSolanaTx(signers, tx, commitment, invoiceList, batch.dedupeId);
     }
 
     private async submitSingleEarnBatch(batch: EarnBatch): Promise<SubmitTransactionResult> {
@@ -900,7 +775,7 @@ export class Client {
     }
 
     private async signAndSubmitSolanaTx(
-        signers: PrivateKey[], tx: SolanaTransaction, commitment: Commitment, invoiceList?: commonpb.InvoiceList
+        signers: PrivateKey[], tx: SolanaTransaction, commitment: Commitment, invoiceList?: commonpb.InvoiceList, dedupeId?: Buffer,
     ): Promise<SubmitTransactionResult> {
         let result: SubmitTransactionResult;
         const fn = async () => {
@@ -908,7 +783,7 @@ export class Client {
             tx.recentBlockhash = blockhash;
             tx.partialSign(...signers.map((signer) => { return new SolanaAccount(signer.secretKey());}));
 
-            result = await this.internal.submitSolanaTransaction(tx, invoiceList, commitment);
+            result = await this.internal.submitSolanaTransaction(tx, invoiceList, commitment, dedupeId);
             if (result.Errors && result.Errors.TxError instanceof BadNonce) {
                 return Promise.reject(new BadNonce());
             }

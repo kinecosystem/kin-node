@@ -1,6 +1,6 @@
 import { xdr } from "stellar-base";
-import modelpb from "@kinecosystem/agora-api/node/common/v4/model_pb";
-import { InvoiceError } from "@kinecosystem/agora-api/node/common/v3/model_pb";
+import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
+import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import { Transaction } from "@solana/web3.js";
 import { TokenInstruction } from "./solana/token-program";
 
@@ -19,7 +19,7 @@ export class TransactionErrors {
     PaymentErrors?: Error[];
 }
 
-export function errorsFromSolanaTx(tx: Transaction, protoError: modelpb.TransactionError): TransactionErrors {
+export function errorsFromSolanaTx(tx: Transaction, protoError: commonpbv4.TransactionError): TransactionErrors {
     const errors = new TransactionErrors();
     const err = errorFromProto(protoError);
     if (!err) {
@@ -56,7 +56,7 @@ export function errorsFromSolanaTx(tx: Transaction, protoError: modelpb.Transact
     return errors;
 }
 
-export function errorsFromStellarTx(env: xdr.TransactionEnvelope, protoError: modelpb.TransactionError): TransactionErrors {
+export function errorsFromStellarTx(env: xdr.TransactionEnvelope, protoError: commonpbv4.TransactionError): TransactionErrors {
     const errors = new TransactionErrors();
     const err = errorFromProto(protoError);
     if (!err) {
@@ -90,20 +90,33 @@ export function errorsFromStellarTx(env: xdr.TransactionEnvelope, protoError: mo
     return errors;
 }
 
-export function errorFromProto(protoError: modelpb.TransactionError): Error | undefined {
+export function errorFromProto(protoError: commonpbv4.TransactionError): Error | undefined {
     switch (protoError.getReason()) {
-        case modelpb.TransactionError.Reason.NONE:
+        case commonpbv4.TransactionError.Reason.NONE:
             return undefined;
-        case modelpb.TransactionError.Reason.UNAUTHORIZED:
+        case commonpbv4.TransactionError.Reason.UNAUTHORIZED:
             return new InvalidSignature();
-        case  modelpb.TransactionError.Reason.BAD_NONCE:
+        case  commonpbv4.TransactionError.Reason.BAD_NONCE:
             return new BadNonce();
-        case modelpb.TransactionError.Reason.INSUFFICIENT_FUNDS:
+        case commonpbv4.TransactionError.Reason.INSUFFICIENT_FUNDS:
             return new InsufficientBalance();
-        case modelpb.TransactionError.Reason.INVALID_ACCOUNT:
+        case commonpbv4.TransactionError.Reason.INVALID_ACCOUNT:
             return new AccountDoesNotExist();
         default:
             return Error("unknown error reason: " + protoError.getReason());
+    }
+}
+
+export function invoiceErrorFromProto(protoError: commonpb.InvoiceError): Error {
+    switch (protoError.getReason()) {
+        case commonpb.InvoiceError.Reason.ALREADY_PAID:
+            return new AlreadyPaid();
+        case commonpb.InvoiceError.Reason.WRONG_DESTINATION:
+            return new WrongDestination();
+        case commonpb.InvoiceError.Reason.SKU_NOT_FOUND:
+            return new SkuNotFound();
+        default:
+            return new Error("unknown invoice error");
     }
 }
 

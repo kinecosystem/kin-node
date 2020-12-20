@@ -5,6 +5,7 @@ import BigNumber from "bignumber.js";
 import { xdr } from "stellar-base";
 import { mock, instance, when, anything, verify } from "ts-mockito";
 import { PublicKey as SolanaPublicKey, Transaction as SolanaTransaction} from "@solana/web3.js";
+import { v4 as uuidv4 } from 'uuid';
 
 import accountpb from "@kinecosystem/agora-api/node/account/v3/account_service_pb";
 import accountpbv4, { ResolveTokenAccountsRequest } from "@kinecosystem/agora-api/node/account/v4/account_service_pb";
@@ -13,7 +14,7 @@ import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
 
 import { InternalClient, SubmitTransactionResult } from "../../src/client";
-import { AccountExists, AccountDoesNotExist, TransactionErrors, SkuNotFound, AlreadyPaid, WrongDestination, InvalidSignature, InsufficientBalance, InsufficientFee, TransactionFailed, NoSubsidizerError } from "../../src/errors";
+import { AccountExists, AccountDoesNotExist, TransactionErrors, SkuNotFound, AlreadyPaid, WrongDestination, InvalidSignature, InsufficientBalance, InsufficientFee, TransactionFailed, NoSubsidizerError, TransactionRejected } from "../../src/errors";
 import {
     Client,
     Memo,
@@ -609,7 +610,7 @@ test("submitEarnBatch", async() => {
     const channel = PrivateKey.random();
 
     const earns = new Array<Earn>();
-    for (let i = 0; i < 202; i++) {
+    for (let i = 0; i < 15; i++) {
         const dest = PrivateKey.random();
         earns.push({
             destination: dest.publicKey(),
@@ -617,7 +618,7 @@ test("submitEarnBatch", async() => {
         });
     }
     const invoiceEarns = new Array<Earn>();
-    for (let i = 0; i < 202; i++) {
+    for (let i = 0; i < 15; i++) {
         const dest = PrivateKey.random();
         invoiceEarns.push({
             destination: dest.publicKey(),
@@ -653,7 +654,7 @@ test("submitEarnBatch", async() => {
         envelope: xdr.TransactionEnvelope,
         invoice?: commonpb.InvoiceList,
     }
-    let requests = new Array<submitRequest>();
+    let request: submitRequest | undefined;
 
     let seq = 0;
     const internal = mock(InternalClient);
@@ -667,8 +668,10 @@ test("submitEarnBatch", async() => {
         });
     when (internal.submitStellarTransaction(anything(), anything()))
         .thenCall((envelope: xdr.TransactionEnvelope, invoice?: commonpb.InvoiceList) => {
-            requests.push({envelope, invoice});
-            return Promise.resolve(new SubmitTransactionResult());
+            request = {envelope, invoice};
+            return Promise.resolve({
+                TxId: Buffer.alloc(32),
+            });
         });
 
     const client = new Client(Environment.Test, {
@@ -677,45 +680,46 @@ test("submitEarnBatch", async() => {
     });
 
     for (const b of batches) {
-        requests = new Array<submitRequest>();
+        request = undefined;
         seq = 0;
 
         const result = await client.submitEarnBatch(b);
-        expect(requests).toHaveLength(3);
+        expect(result!.txId).toEqual(Buffer.alloc(32));
+        expect(result.txError).toBeUndefined();
+        expect(result.earnErrors).toBeUndefined();
 
-        for (let reqId = 0; reqId < requests.length; reqId++) {
-            const req = requests[reqId];
-            const tx = req.envelope.v0().tx();
+        expect(request).toBeDefined();
 
-            expect(tx.operations()).toHaveLength(Math.min(100, b.earns.length - reqId*100));
-            expect(tx.seqNum().low).toBe(reqId+1);
+        const tx = request!.envelope.v0().tx();
 
-            if (b.channel) {
-                expect(tx.sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
-            } else {
-                expect(tx.sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
-            }
+        expect(tx.operations()).toHaveLength(15);
+        expect(tx.seqNum().low).toBe(1);
 
-            if (b.memo) {
-                expect(b.memo).toBe(tx.memo().text().toString());
-            } else if (b.earns[0].invoice) {
-                const serialized = req.invoice!.serializeBinary();
-                const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex");
-                const expected = Memo.new(1, TransactionType.Earn, 1, buf);
-                expect(tx.memo().hash()).toStrictEqual(expected.buffer);
-            } else {
-                // since we have an app index configured, we still expect a memo
-                const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
-                expect(tx.memo().switch()).toBe(xdr.MemoType.memoHash());
-                expect(tx.memo().hash()).toStrictEqual(expected.buffer);
-            }
+        if (b.channel) {
+            expect(tx.sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
+        } else {
+            expect(tx.sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+        }
 
-            for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
-                const op = tx.operations()[opIndex];
-                expect(op.sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
-                expect(op.body().paymentOp().amount().low).toBe((reqId * 100 + opIndex + 1));
-                expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[reqId * 100 + opIndex].destination.buffer);
-            }
+        if (b.memo) {
+            expect(b.memo).toBe(tx.memo().text().toString());
+        } else if (b.earns[0].invoice) {
+            const serialized = request!.invoice!.serializeBinary();
+            const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex");
+            const expected = Memo.new(1, TransactionType.Earn, 1, buf);
+            expect(tx.memo().hash()).toStrictEqual(expected.buffer);
+        } else {
+            // since we have an app index configured, we still expect a memo
+            const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
+            expect(tx.memo().switch()).toBe(xdr.MemoType.memoHash());
+            expect(tx.memo().hash()).toStrictEqual(expected.buffer);
+        }
+
+        for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
+            const op = tx.operations()[opIndex];
+            expect(op.sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
+            expect(op.body().paymentOp().amount().low).toBe((opIndex + 1));
+            expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[opIndex].destination.buffer);
         }
     }
 });
@@ -769,26 +773,45 @@ test("submitEarnBatch failures", async() => {
         expect((<Error>err).message).toContain("all or none");
     }
 
-    // ensure partial failures are handled
+    // too few earns
     const earns = new Array<Earn>();
-    for (let i = 0; i < 202; i++) {
+    badBatch.earns = earns;
+    try {
+        await client.submitEarnBatch(badBatch);
+        fail();
+    } catch (err) {
+        expect((<Error>err).message).toContain("at least 1");
+    }
+
+    // too many earns
+    for (let i = 0; i < 16; i++) {
         const dest = PrivateKey.random();
         earns.push({
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
         });
     }
+    try {
+        await client.submitEarnBatch(badBatch);
+        fail();
+    } catch (err) {
+        expect((<Error>err).message).toContain("more than 15");
+    }
 
-    let failAfter = 1;
-    let failWith: TransactionErrors | undefined;
+    // reduce to max number of earns of 15
+    earns.pop();
+
     when(internal.getAccountInfo(anything())).thenCall(() => {
         return Promise.resolve(new accountpb.AccountInfo());
     });
+    
+    let failWith: TransactionErrors | undefined;
     when(internal.submitStellarTransaction(anything(), anything()))
         .thenCall(() => {
-            if (failAfter > 0) {
-                failAfter--;
-                return Promise.resolve(new SubmitTransactionResult());
+            if (!failWith) {
+                return Promise.resolve({
+                    TxId: Buffer.alloc(32),
+                });
             }
 
             return Promise.resolve({
@@ -801,31 +824,30 @@ test("submitEarnBatch failures", async() => {
         internal: instance(internal),
     });
 
-    failAfter = 1;
-    failWith = {
-        TxError: new InsufficientFee()
-    };
     let result = await client.submitEarnBatch({
         sender: sender,
         earns: earns,
     });
-    expect(result.succeeded).toHaveLength(100);
-    expect(result.failed).toHaveLength(102);
-    for (let i = 0; i < 100; i++) {
-        expect(result.failed[i].error).toBeInstanceOf(InsufficientFee);
-        expect(result.failed[i].earn).toBe(earns[100+i]);
-    }
-    for (let i = 100; i < 102; i++) {
-        expect(result.failed[i].error).toBeUndefined();
-        expect(result.failed[i].earn).toBe(earns[100+i]);
-    }
+    expect(result.txId).toEqual(Buffer.alloc(32));
+    expect(result.txError).toBeUndefined();
+    expect(result.earnErrors).toBeUndefined();
 
-    failAfter = 1;
     failWith = {
-        TxError: new TransactionFailed(),
-        PaymentErrors: new Array<Error>(100),
+        TxError: new InsufficientFee()
     };
-    for (let i = 0; i < 100; i++) {
+    result = await client.submitEarnBatch({
+        sender: sender,
+        earns: earns,
+    });
+    expect(result.txId).toEqual(Buffer.alloc(32));
+    expect(result.txError).toBeInstanceOf(InsufficientFee);
+    expect(result.earnErrors).toBeUndefined();
+    
+    failWith = {
+        TxError: new InsufficientBalance(),
+        PaymentErrors: new Array<Error>(15),
+    };
+    for (let i = 0; i < 15; i++) {
         if (i%2 == 0) {
             failWith.PaymentErrors![i] = new InsufficientBalance();
         }
@@ -834,15 +856,14 @@ test("submitEarnBatch failures", async() => {
         sender: sender,
         earns: earns,
     });
-    expect(result.succeeded).toHaveLength(100);
-    expect(result.failed).toHaveLength(102);
-
-    for (let i = 0; i < result.failed.length; i++) {
-        if (i < 100 && i%2 == 0) {
-            expect(result.failed[i].error).toBeDefined();
-            expect(result.failed[i].error).toBeInstanceOf(InsufficientBalance);
-        } else {
-            expect(result.failed[i].error).toBeUndefined();
+    expect(result.txId).toEqual(Buffer.alloc(32));
+    expect(result.txError).toBeInstanceOf(InsufficientBalance);
+    expect(result.earnErrors).toBeDefined();
+    expect(result.earnErrors!).toHaveLength(8);
+    for (let i = 0; i < 15; i++) {
+        if (i%2 == 0) {
+            expect(result.earnErrors![i/2].error).toBeInstanceOf(InsufficientBalance);
+            expect(result.earnErrors![i/2].earnIndex).toEqual(i);
         }
     }
 });
@@ -851,7 +872,7 @@ test("submitEarnBatch duplicate signers", async() => {
     const sender = PrivateKey.random();
 
     const earns = new Array<Earn>();
-    for (let i = 0; i < 202; i++) {
+    for (let i = 0; i < 10; i++) {
         const dest = PrivateKey.random();
         earns.push({
             destination: dest.publicKey(),
@@ -869,10 +890,11 @@ test("submitEarnBatch duplicate signers", async() => {
         envelope: xdr.TransactionEnvelope,
         invoice?: commonpb.InvoiceList,
     }
-    let requests = new Array<submitRequest>();
-
+    
     let seq = 0;
     const internal = mock(InternalClient);
+    
+    let req: submitRequest | undefined;
     when (internal.getAccountInfo(anything()))
         .thenCall(() => {
             const accountInfo = new accountpb.AccountInfo();
@@ -883,8 +905,10 @@ test("submitEarnBatch duplicate signers", async() => {
         });
     when (internal.submitStellarTransaction(anything(), anything()))
         .thenCall((envelope: xdr.TransactionEnvelope, invoice?: commonpb.InvoiceList) => {
-            requests.push({envelope, invoice});
-            return Promise.resolve(new SubmitTransactionResult());
+            req = {envelope, invoice};
+            return Promise.resolve({
+                TxId: Buffer.alloc(32),
+            });
         });
 
     const client = new Client(Environment.Test, {
@@ -893,35 +917,31 @@ test("submitEarnBatch duplicate signers", async() => {
         whitelistKey: sender,
     });
 
-    requests = new Array<submitRequest>();
-    seq = 0;
-
     const result = await client.submitEarnBatch(b);
-    expect(requests).toHaveLength(3);
+    expect(result.txId).toEqual(Buffer.alloc(32));
+    expect(result.txError).toBeUndefined();
+    expect(result.earnErrors).toBeUndefined();
+    
+    const tx = req!.envelope.v0().tx();
 
-    for (let reqId = 0; reqId < requests.length; reqId++) {
-        const req = requests[reqId];
-        const tx = req.envelope.v0().tx();
+    // There should only be one signature despite channel + whitelister being set
+    expect(req!.envelope.v0().signatures()).toHaveLength(1);
 
-        // There should only be one signature despite channel + whitelister being set
-        expect(req.envelope.v0().signatures()).toHaveLength(1);
+    expect(tx.operations()).toHaveLength(10);
+    expect(tx.seqNum().low).toBe(1);
 
-        expect(tx.operations()).toHaveLength(Math.min(100, b.earns.length - reqId*100));
-        expect(tx.seqNum().low).toBe(reqId+1);
-
-        expect(tx.sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
-        
-        // since we have an app index configured, we still expect a memo
-        const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
-        expect(tx.memo().switch()).toBe(xdr.MemoType.memoHash());
-        expect(tx.memo().hash()).toStrictEqual(expected.buffer);
-        
-        for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
-            const op = tx.operations()[opIndex];
-            expect(op.sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
-            expect(op.body().paymentOp().amount().low).toBe((reqId * 100 + opIndex + 1));
-            expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[reqId * 100 + opIndex].destination.buffer);
-        }
+    expect(tx.sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+    
+    // since we have an app index configured, we still expect a memo
+    const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
+    expect(tx.memo().switch()).toBe(xdr.MemoType.memoHash());
+    expect(tx.memo().hash()).toStrictEqual(expected.buffer);
+    
+    for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
+        const op = tx.operations()[opIndex];
+        expect(op.sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
+        expect(op.body().paymentOp().amount().low).toBe((opIndex + 1));
+        expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[opIndex].destination.buffer);
     }
 });
 
@@ -930,7 +950,7 @@ test("submitEarnBatch Kin 2", async() => {
     const channel = PrivateKey.random();
 
     const earns = new Array<Earn>();
-    for (let i = 0; i < 202; i++) {
+    for (let i = 0; i < 15; i++) {
         const dest = PrivateKey.random();
         earns.push({
             destination: dest.publicKey(),
@@ -938,7 +958,7 @@ test("submitEarnBatch Kin 2", async() => {
         });
     }
     const invoiceEarns = new Array<Earn>();
-    for (let i = 0; i < 202; i++) {
+    for (let i = 0; i < 15; i++) {
         const dest = PrivateKey.random();
         invoiceEarns.push({
             destination: dest.publicKey(),
@@ -974,7 +994,7 @@ test("submitEarnBatch Kin 2", async() => {
         envelope: xdr.TransactionEnvelope,
         invoice?: commonpb.InvoiceList,
     }
-    let requests = new Array<submitRequest>();
+    let request: submitRequest | undefined;
 
     let seq = 0;
     const internal = mock(InternalClient);
@@ -988,8 +1008,10 @@ test("submitEarnBatch Kin 2", async() => {
         });
     when (internal.submitStellarTransaction(anything(), anything()))
         .thenCall((envelope: xdr.TransactionEnvelope, invoice?: commonpb.InvoiceList) => {
-            requests.push({envelope, invoice});
-            return Promise.resolve(new SubmitTransactionResult());
+            request = {envelope, invoice};
+            return Promise.resolve({
+                TxId: Buffer.alloc(32),
+            });
         });
 
     const client = new Client(Environment.Test, {
@@ -999,47 +1021,47 @@ test("submitEarnBatch Kin 2", async() => {
     });
 
     for (const b of batches) {
-        requests = new Array<submitRequest>();
+        request = undefined;
         seq = 0;
 
         const result = await client.submitEarnBatch(b);
-        expect(requests).toHaveLength(3);
+        expect(result.txId).toEqual(Buffer.alloc(32));
+        expect(result.txError).toBeUndefined();
+        expect(result.earnErrors).toBeUndefined();
 
-        for (let reqId = 0; reqId < requests.length; reqId++) {
-            const req = requests[reqId];
-            const tx = req.envelope.v0().tx();
+        expect(request).toBeDefined();
+        const tx = request!.envelope.v0().tx();
 
-            expect(tx.operations()).toHaveLength(Math.min(100, b.earns.length - reqId*100));
-            expect(tx.seqNum().low).toBe(reqId+1);
+        expect(tx.operations()).toHaveLength(15);
+        expect(tx.seqNum().low).toBe(1);
 
-            if (b.channel) {
-                expect(tx.sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
-            } else {
-                expect(tx.sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
-            }
+        if (b.channel) {
+            expect(tx.sourceAccountEd25519()).toStrictEqual(channel.kp.rawPublicKey());
+        } else {
+            expect(tx.sourceAccountEd25519()).toStrictEqual(sender.kp.rawPublicKey());
+        }
 
-            if (b.memo) {
-                expect(b.memo).toBe(tx.memo().text().toString());
-            } else if (b.earns[0].invoice) {
-                const serialized = req.invoice!.serializeBinary();
-                const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex");
-                const expected = Memo.new(1, TransactionType.Earn, 1, buf);
-                expect(tx.memo().hash()).toStrictEqual(expected.buffer);
-            } else {
-                // since we have an app index configured, we still expect a memo
-                const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
-                expect(tx.memo().switch()).toBe(xdr.MemoType.memoHash());
-                expect(tx.memo().hash()).toStrictEqual(expected.buffer);
-            }
+        if (b.memo) {
+            expect(b.memo).toBe(tx.memo().text().toString());
+        } else if (b.earns[0].invoice) {
+            const serialized = request!.invoice!.serializeBinary();
+            const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex");
+            const expected = Memo.new(1, TransactionType.Earn, 1, buf);
+            expect(tx.memo().hash()).toStrictEqual(expected.buffer);
+        } else {
+            // since we have an app index configured, we still expect a memo
+            const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
+            expect(tx.memo().switch()).toBe(xdr.MemoType.memoHash());
+            expect(tx.memo().hash()).toStrictEqual(expected.buffer);
+        }
 
-            for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
-                const op = tx.operations()[opIndex];
-                expect(op.sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
-                // The smallest denomination on Kin 2 is 1e-7, which is smaller by than quarks (1e-5) by 1e2. Therefore,
-                // we expect the amount to be multiplied by 1e2.
-                expect(op.body().paymentOp().amount().low).toBe((reqId * 100 + opIndex + 1) * 100);
-                expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[reqId * 100 + opIndex].destination.buffer);
-            }
+        for (let opIndex = 0; opIndex < tx.operations().length; opIndex++) {
+            const op = tx.operations()[opIndex];
+            expect(op.sourceAccount()!.ed25519()).toStrictEqual(sender.kp.rawPublicKey());
+            // The smallest denomination on Kin 2 is 1e-7, which is smaller by than quarks (1e-5) by 1e2. Therefore,
+            // we expect the amount to be multiplied by 1e2.
+            expect(op.body().paymentOp().amount().low).toBe((opIndex + 1) * 100);
+            expect(op.body().paymentOp().destination().ed25519()).toStrictEqual(b.earns[opIndex].destination.buffer);
         }
     }
 });
@@ -1182,12 +1204,13 @@ test("submitPayment Kin 4", async() => {
         tx: SolanaTransaction,
         invoice?: commonpb.InvoiceList,
         commitment?: Commitment,
+        dedupeId?: Buffer,
     }
     let request: submitRequest | undefined;
     const txId = Buffer.from("someid");
-    when (internal.submitSolanaTransaction(anything(), anything(), anything()))
-        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment) => {
-            request = {tx, invoice, commitment};
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
+            request = {tx, invoice, commitment, dedupeId};
             const result = new SubmitTransactionResult();
             result.TxId = txId;
             return Promise.resolve(result);
@@ -1205,6 +1228,13 @@ test("submitPayment Kin 4", async() => {
             destination: dest.publicKey(),
             type: TransactionType.Spend,
             quarks: new BigNumber(11),
+        },
+        {
+            sender: sender,
+            destination: dest.publicKey(),
+            type: TransactionType.Spend,
+            quarks: new BigNumber(11),
+            dedupeId: Buffer.from(uuidv4()),
         },
         {
             sender: sender,
@@ -1239,6 +1269,7 @@ test("submitPayment Kin 4", async() => {
         expect(resp).toEqual(txId);
         
         expect(request).toBeDefined();
+        expect(request!.dedupeId).toEqual(p.dedupeId);
 
         const tx = request!.tx;
         expect(tx.signatures).toHaveLength(2);
@@ -1279,13 +1310,14 @@ test("submitPayment Kin 4 with no service subsidizer", async() => {
         tx: SolanaTransaction,
         invoice?: commonpb.InvoiceList,
         commitment?: Commitment,
+        dedupeId?: Buffer,
     }
     const requests: submitRequest[] = [];
     
     const txId = Buffer.from("someid");
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
-        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment) => {
-            requests.push({tx, invoice, commitment});
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
+            requests.push({tx, invoice, commitment, dedupeId});
             
             const result = new SubmitTransactionResult();
             result.TxId = txId;
@@ -1364,14 +1396,15 @@ test("submitPayment Kin 4 with preferred account resolution", async() => {
         tx: SolanaTransaction,
         invoice?: commonpb.InvoiceList,
         commitment?: Commitment,
+        dedupeId?: Buffer,
     }
     const requests: submitRequest[] = [];
     
     let attemptedSubmission = false;
     const txId = Buffer.from("someid");
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
-        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment) => {
-            requests.push({tx, invoice, commitment});
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
+            requests.push({tx, invoice, commitment, dedupeId});
             
             const result = new SubmitTransactionResult();
             result.TxId = txId;
@@ -1469,13 +1502,14 @@ test("submitPayment Kin 4 with exact account resolution", async() => {
         tx: SolanaTransaction,
         invoice?: commonpb.InvoiceList,
         commitment?: Commitment,
+        dedupeId?: Buffer,
     }
     const requests: submitRequest[] = [];
     
     const txId = Buffer.from("someid");
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
-        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment) => {
-            requests.push({tx, invoice, commitment});
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
+            requests.push({tx, invoice, commitment, dedupeId});
             
             return Promise.resolve({
                 TxId: txId,
@@ -1594,7 +1628,7 @@ test("submitPayment Kin 4 failure", async() => {
     };
 
     let reason = 1;
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
         .thenCall(() => {
             const invoiceError = new commonpb.InvoiceError();
             invoiceError.setOpIndex(0);
@@ -1641,7 +1675,7 @@ test("submitPayment Kin 4 failure", async() => {
         }
     }
 
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
         .thenCall(() => {
             return Promise.resolve({
                 TxId: Buffer.alloc(32),
@@ -1658,7 +1692,7 @@ test("submitPayment Kin 4 failure", async() => {
         expect(err).toBeInstanceOf(InvalidSignature);
     }
 
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
         .thenCall(() => {
             return Promise.resolve({
                 TxId: Buffer.alloc(32),
@@ -1687,7 +1721,7 @@ test("submitEarnBatch Kin 4", async() => {
 
     const expectedDestinations: PublicKey[] = [];
     const earns = new Array<Earn>();
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 15; i++) {
         const dest = PrivateKey.random();
         earns.push({
             destination: dest.publicKey(),
@@ -1696,7 +1730,7 @@ test("submitEarnBatch Kin 4", async() => {
         expectedDestinations.push(dest.publicKey());
     }
     const invoiceEarns = new Array<Earn>();
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 15; i++) {
         const dest = PrivateKey.random();
         invoiceEarns.push({
             destination: dest.publicKey(),
@@ -1716,6 +1750,7 @@ test("submitEarnBatch Kin 4", async() => {
         {
             sender: sender,
             earns: earns,
+            dedupeId: Buffer.from(uuidv4())
         },
         {
             sender: sender,
@@ -1732,14 +1767,15 @@ test("submitEarnBatch Kin 4", async() => {
         tx: SolanaTransaction,
         invoiceList?: commonpb.InvoiceList,
         commitment?: Commitment,
+        dedupeId?: Buffer,
     }
-    let requests: submitRequest[];
+    let request: submitRequest | undefined;
 
     const internal = mock(InternalClient);
     const txId = Buffer.from("someid");
-    when (internal.submitSolanaTransaction(anything(), anything(), anything()))
-    .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment) => {
-            requests.push({tx, invoiceList: invoice, commitment});
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+    .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
+            request = {tx, invoiceList: invoice, commitment, dedupeId};
 
             const result = new SubmitTransactionResult();
             result.TxId = txId;
@@ -1757,55 +1793,49 @@ test("submitEarnBatch Kin 4", async() => {
     });
 
     for (const b of batches) {
-        requests = new Array<submitRequest>();
+        request = undefined;
 
         const result = await client.submitEarnBatch(b);
-        expect(result.succeeded).toHaveLength(60);
-        expect(result.failed).toHaveLength(0);
+        expect(result.txId).toEqual(txId);
+        expect(result.txError).toBeUndefined();
+        expect(result.earnErrors).toBeUndefined();
+        
+        expect(request).toBeDefined();
+        expect(request!.dedupeId).toEqual(b.dedupeId);
+        
+        const tx = request!.tx;
+        expect(tx.signatures).toHaveLength(2);
+        expect(tx.signatures[0].publicKey.toBuffer()).toEqual(subsidizer);
+        expect(tx.signatures[0].signature).toBeNull();
+        expect(tx.signatures[1].publicKey.toBuffer()).toEqual(sender.publicKey().buffer);
+        expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
-        expect(requests).toHaveLength(4);  // 18-19 earns per batch
-        for (let reqId = 0; reqId < requests.length; reqId++) {
-            const req = requests[reqId];
-            const tx = req.tx;
-
-            expect(tx.signatures).toHaveLength(2);
-            expect(tx.signatures[0].publicKey.toBuffer()).toEqual(subsidizer);
-            expect(tx.signatures[0].signature).toBeNull();
-            expect(tx.signatures[1].publicKey.toBuffer()).toEqual(sender.publicKey().buffer);
-            expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
-
-            const tokenProgramKey = new SolanaPublicKey(tokenProgram);
-            const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
+        const tokenProgramKey = new SolanaPublicKey(tokenProgram);
+        const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
+        
+        if (b.memo) {
+            expect(memoInstruction.data).toEqual(b.memo);
+        } else if (b.earns[0].invoice) {
+            const serialized = request!.invoiceList!.serializeBinary();
+            const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex");
+            const expected = Memo.new(1, TransactionType.Earn, 1, buf);
             
-            let batchSize: number;
-            if (b.memo) {
-                expect(memoInstruction.data).toEqual(b.memo);
-                batchSize = 19;
-            } else if (b.earns[0].invoice) {
-                const serialized = req.invoiceList!.serializeBinary();
-                const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex");
-                const expected = Memo.new(1, TransactionType.Earn, 1, buf);
-                
-                expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-                batchSize = 18;
-            } else {
-                // since we have an app index configured, we still expect a memo
-                const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
-                expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-                batchSize = 18;
-            }
-            
-            const reqBatchSize = (reqId === 3 ? 60 % batchSize : batchSize);
-            expect(tx.instructions).toHaveLength(reqBatchSize + 1);
+            expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
+        } else {
+            // since we have an app index configured, we still expect a memo
+            const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
+            expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
+        }
+        
+        expect(tx.instructions).toHaveLength(16);  // including memo
 
-            for (let i = 0; i < reqBatchSize; i++) {
-                const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
-                expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
+        for (let i = 0; i < 15; i++) {
+            const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
+            expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
 
-                expect(tokenInstruction.dest.toBuffer()).toEqual(b.earns[reqId * batchSize + i].destination.buffer);
-                expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-                expect(tokenInstruction.amount).toEqual(BigInt((reqId * batchSize + i + 1)));
-            }
+            expect(tokenInstruction.dest.toBuffer()).toEqual(b.earns[i].destination.buffer);
+            expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
+            expect(tokenInstruction.amount).toEqual(BigInt((i + 1)));
         }
     }
 });
@@ -1814,26 +1844,28 @@ test("submitEarnBatch Kin 4 with no service subsidizer", async() => {
 
     const sender = PrivateKey.random();
     const appSubsidizer = PrivateKey.random();
-    const earns = new Array<Earn>();
-    for (let i = 0; i < 20; i++) {
+    const earnCount = 10;
+    const earns = new Array<Earn>(earnCount);
+    for (let i = 0; i < earnCount; i++) {
         const dest = PrivateKey.random();
-        earns.push({
+        earns[i] = {
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
-        });
+        };
     }
 
     interface submitRequest {
         tx: SolanaTransaction,
         invoiceList?: commonpb.InvoiceList,
         commitment?: Commitment,
+        dedupeId?: Buffer,
     }
-    const requests: submitRequest[] = [];
+    let request: submitRequest | undefined;
 
     const txId = Buffer.from("someid");
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
-        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment) => {
-            requests.push({tx, invoiceList: invoice, commitment});
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
+            request = {tx, invoiceList: invoice, commitment, dedupeId};
 
             return Promise.resolve({
                 TxId: txId,
@@ -1864,39 +1896,33 @@ test("submitEarnBatch Kin 4 with no service subsidizer", async() => {
         earns: earns,
         subsidizer: appSubsidizer,
     });
-    expect(result.succeeded).toHaveLength(20);
-    expect(result.failed).toHaveLength(0);
-    for (let i = 0; i < 20; i++) {
-        expect(result.succeeded[i].earn).toBe(earns[i]);
-    }
+    expect(result.txId).toEqual(txId);
+    expect(result.txError).toBeUndefined();
+    expect(result.earnErrors).toBeUndefined();
+    
+    expect(request).toBeDefined();
+    const tx = request!.tx;
 
-    expect(requests).toHaveLength(2);
-    for (let reqId = 0; reqId < requests.length; reqId++) {
-        const req = requests[reqId];
-        const tx = req.tx;
+    expect(tx.signatures).toHaveLength(2);
+    expect(tx.signatures[0].publicKey.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
+    expect(appSubsidizer.kp.verify(tx.serializeMessage(), tx.signatures[0].signature!)).toBeTruthy();
+    expect(tx.signatures[1].publicKey.toBuffer()).toEqual(sender.publicKey().buffer);
+    expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
-        expect(tx.signatures).toHaveLength(2);
-        expect(tx.signatures[0].publicKey.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
-        expect(appSubsidizer.kp.verify(tx.serializeMessage(), tx.signatures[0].signature!)).toBeTruthy();
-        expect(tx.signatures[1].publicKey.toBuffer()).toEqual(sender.publicKey().buffer);
-        expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
+    const tokenProgramKey = new SolanaPublicKey(tokenProgram);
+    const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
+    
+    const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
+    expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
+    
+    expect(tx.instructions).toHaveLength(earnCount + 1);
 
-        const tokenProgramKey = new SolanaPublicKey(tokenProgram);
-        const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
-        
-        const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
-        expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-        
-        const batchSize = (reqId === requests.length - 1 ? requests.length % 18 : 18);
-        expect(tx.instructions).toHaveLength(batchSize + 1);
-
-        for (let i = 0; i < batchSize; i++) {
-            const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
-                expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
-                expect(tokenInstruction.dest.toBuffer()).toEqual(earns[reqId * 18 + i].destination.buffer);
-                expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-                expect(tokenInstruction.amount).toEqual(BigInt((reqId * 18 + i + 1)));
-        }
+    for (let i = 0; i < earnCount; i++) {
+        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
+            expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
+            expect(tokenInstruction.dest.toBuffer()).toEqual(earns[i].destination.buffer);
+            expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
+            expect(tokenInstruction.amount).toEqual(BigInt((i + 1)));
     }
 });
 test("submitEarnBatch Kin 4 with preferred account resolution", async() => {
@@ -1911,13 +1937,14 @@ test("submitEarnBatch Kin 4 with preferred account resolution", async() => {
     const originalDests: PublicKey[] = [];
     const resolvedDests: PublicKey[] = [];
     
-    const earns = new Array<Earn>();
-    for (let i = 0; i < 20; i++) {
+    const earnCount = 15;
+    const earns = new Array<Earn>(earnCount);
+    for (let i = 0; i < earnCount; i++) {
         const dest = PrivateKey.random();
-        earns.push({
+        earns[i] = {
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
-        });
+        };
         originalDests.push(dest.publicKey());
         
         const resolvedDest = PrivateKey.random().publicKey();
@@ -1929,14 +1956,15 @@ test("submitEarnBatch Kin 4 with preferred account resolution", async() => {
         tx: SolanaTransaction,
         invoiceList?: commonpb.InvoiceList,
         commitment?: Commitment,
+        dedupeId?: Buffer,
     }
     const requests: submitRequest[] = [];
 
     let attemptedSubmission = false;
     const txId = Buffer.from("someid");
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
-        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment) => {
-            requests.push({tx, invoiceList: invoice, commitment});
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
+            requests.push({tx, invoiceList: invoice, commitment, dedupeId});
 
             if (!attemptedSubmission) {
                 attemptedSubmission = true;
@@ -1978,13 +2006,11 @@ test("submitEarnBatch Kin 4 with preferred account resolution", async() => {
         sender: sender,
         earns: earns,
     });
-    expect(result.succeeded).toHaveLength(20);
-    expect(result.failed).toHaveLength(0);
-    for (let i = 0; i < 20; i++) {
-        expect(result.succeeded[i].earn).toBe(earns[i]);
-    }
-
-    expect(requests).toHaveLength(4);
+    expect(result.txId).toEqual(txId);
+    expect(result.txError).toBeUndefined();
+    expect(result.earnErrors).toBeUndefined();
+    
+    expect(requests).toHaveLength(2);
     for (let reqId = 0; reqId < requests.length; reqId++) {
         const batchIndex = Math.floor(reqId / 2);
         const resolved = (reqId % 2) == 1;
@@ -2004,10 +2030,9 @@ test("submitEarnBatch Kin 4 with preferred account resolution", async() => {
         const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
         expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
         
-        const reqBatchSize = (batchIndex === 1 ? 20 % 18 : 18);
-        expect(tx.instructions).toHaveLength(reqBatchSize + 1);
+        expect(tx.instructions).toHaveLength(earnCount + 1);
 
-        for (let i = 0; i < reqBatchSize; i++) {
+        for (let i = 0; i < earnCount; i++) {
             const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
             
             if (resolved) {
@@ -2027,25 +2052,29 @@ test("submitEarnBatch Kin 4 with exact account resolution", async() => {
     const internal = mock(InternalClient);
 
     const sender = PrivateKey.random();
-    const earns = new Array<Earn>();
-    for (let i = 0; i < 20; i++) {
+
+    const earnCount = 15;
+    const earns = new Array<Earn>(earnCount);
+    for (let i = 0; i < earnCount; i++) {
         const dest = PrivateKey.random();
-        earns.push({
+        earns[i] = {
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
-        });
+        };
     }
 
     interface submitRequest {
         tx: SolanaTransaction,
         invoiceList?: commonpb.InvoiceList,
         commitment?: Commitment,
+        dedupeId?: Buffer,
     }
     const requests: submitRequest[] = [];
 
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
-        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment) => {
-            requests.push({tx, invoiceList: invoice, commitment});
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
+            requests.push({tx, invoiceList: invoice, commitment, dedupeId});
+            
             return Promise.resolve({
                 TxId: Buffer.alloc(64),
                 Errors: {
@@ -2067,16 +2096,9 @@ test("submitEarnBatch Kin 4 with exact account resolution", async() => {
         sender: sender,
         earns: earns,
     }, Commitment.Single, AccountResolution.Exact, AccountResolution.Exact);
-    expect(result.succeeded).toHaveLength(0);
-    expect(result.failed).toHaveLength(20);
-    for (let i = 0; i < 18; i++) {
-        expect(result.failed[i].error).toBeInstanceOf(AccountDoesNotExist);
-        expect(result.failed[i].earn).toBe(earns[i]);
-    }
-    for (let i = 18; i < 20; i++) {
-        expect(result.failed[i].error).toBeUndefined();
-        expect(result.failed[i].earn).toBe(earns[i]);
-    }
+    expect(result.txId).toEqual(Buffer.alloc(64));
+    expect(result.txError).toBeInstanceOf(AccountDoesNotExist);
+    expect(result.earnErrors).toBeUndefined();
 
     expect(requests).toHaveLength(1);
     const req = requests[0];
@@ -2094,9 +2116,9 @@ test("submitEarnBatch Kin 4 with exact account resolution", async() => {
     const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
     expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
     
-    expect(tx.instructions).toHaveLength(18 + 1);
+    expect(tx.instructions).toHaveLength(earnCount + 1);
 
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < earnCount; i++) {
         const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
         expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
 
@@ -2156,22 +2178,38 @@ test("submitEarnBatch Kin 4 failures", async() => {
         expect((<Error>err).message).toContain("all or none");
     }
 
-    // ensure partial failures are handled
+    // too few earns
     const earns = new Array<Earn>();
-    for (let i = 0; i < 60; i++) {
+    badBatch.earns = earns;
+    try {
+        await client.submitEarnBatch(badBatch);
+        fail();
+    } catch (err) {
+        expect((<Error>err).message).toContain("at least 1");
+    }
+
+    // too many earns
+    for (let i = 0; i < 16; i++) {
         const dest = PrivateKey.random();
         earns.push({
             destination: dest.publicKey(),
             quarks: new BigNumber(1 + i),
         });
     }
+    try {
+        await client.submitEarnBatch(badBatch);
+        fail();
+    } catch (err) {
+        expect((<Error>err).message).toContain("more than 15");
+    }
 
-    let failAfter = 1;
+    // reduce to max number of earns of 15
+    earns.pop();
+
     let failWith: TransactionErrors | undefined;
-    when(internal.submitSolanaTransaction(anything(), anything(), anything()))
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
         .thenCall(() => {
-            if (failAfter > 0) {
-                failAfter--;
+            if (!failWith) {
                 return Promise.resolve(new SubmitTransactionResult());
             }
 
@@ -2190,31 +2228,30 @@ test("submitEarnBatch Kin 4 failures", async() => {
         kinVersion: 4,
     });
 
-    failAfter = 1;
-    failWith = {
-        TxError: new InsufficientFee()
-    };
     let result = await client.submitEarnBatch({
         sender: sender,
         earns: earns,
     });
-    expect(result.succeeded).toHaveLength(18);
-    expect(result.failed).toHaveLength(42);
-    for (let i = 0; i < 18; i++) {
-        expect(result.failed[i].error).toBeInstanceOf(InsufficientFee);
-        expect(result.failed[i].earn).toBe(earns[18+i]);
-    }
-    for (let i = 18; i < 42; i++) {
-        expect(result.failed[i].error).toBeUndefined();
-        expect(result.failed[i].earn).toBe(earns[18+i]);
-    }
+    expect(result.txId).toEqual(Buffer.alloc(32));
+    expect(result.txError).toBeUndefined();
+    expect(result.earnErrors).toBeUndefined();
 
-    failAfter = 1;
     failWith = {
-        TxError: new TransactionFailed(),
-        PaymentErrors: new Array<Error>(18),
+        TxError: new InsufficientFee()
     };
-    for (let i = 0; i < 18; i++) {
+    result = await client.submitEarnBatch({
+        sender: sender,
+        earns: earns,
+    });
+    expect(result.txId).toEqual(Buffer.alloc(32));
+    expect(result.txError).toBeInstanceOf(InsufficientFee);
+    expect(result.earnErrors).toBeUndefined();
+
+    failWith = {
+        TxError: new InsufficientBalance(),
+        PaymentErrors: new Array<Error>(15),
+    };
+    for (let i = 0; i < 15; i++) {
         if (i%2 == 0) {
             failWith.PaymentErrors![i] = new InsufficientBalance();
         }
@@ -2223,17 +2260,77 @@ test("submitEarnBatch Kin 4 failures", async() => {
         sender: sender,
         earns: earns,
     });
-    expect(result.succeeded).toHaveLength(18);
-    expect(result.failed).toHaveLength(42);
-
-    for (let i = 0; i < result.failed.length; i++) {
-        if (i < 18 && i%2 == 0) {
-            expect(result.failed[i].error).toBeDefined();
-            expect(result.failed[i].error).toBeInstanceOf(InsufficientBalance);
-        } else {
-            expect(result.failed[i].error).toBeUndefined();
+    expect(result.txId).toEqual(Buffer.alloc(32));
+    expect(result.txError).toBeInstanceOf(InsufficientBalance);
+    expect(result.earnErrors).toBeDefined();
+    expect(result.earnErrors!).toHaveLength(8);
+    for (let i = 0; i < 15; i++) {
+        if (i%2 == 0) {
+            expect(result.earnErrors![i/2].error).toBeInstanceOf(InsufficientBalance);
+            expect(result.earnErrors![i/2].earnIndex).toEqual(i);
         }
     }
+});
+test("submitEarnBatch Kin 4 invoice errors", async() => {
+    const internal = mock(InternalClient);
+
+    // ensure top level bad requests are rejected
+    const sender = PrivateKey.random();
+    const earnCount = 15;
+    const earns = new Array<Earn>(earnCount);
+    for (let i = 0; i < earnCount; i++) {
+        const dest = PrivateKey.random();
+        earns[i] = {
+            destination: dest.publicKey(),
+            quarks: new BigNumber(1 + i),
+        };
+    }
+    
+    let client = new Client(Environment.Test, {
+        internal: instance(internal),
+        kinVersion: 4,
+    });
+    
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+        .thenCall(() => {
+            const invoiceError = new commonpb.InvoiceError();
+            invoiceError.setOpIndex(1);
+            invoiceError.setReason(commonpb.InvoiceError.Reason.SKU_NOT_FOUND);
+            const invoiceError2 = new commonpb.InvoiceError();
+            invoiceError2.setOpIndex(3);
+            invoiceError2.setReason(commonpb.InvoiceError.Reason.ALREADY_PAID);
+            
+            return Promise.resolve({
+                TxId: Buffer.alloc(32),
+                InvoiceErrors: [
+                    invoiceError,
+                    invoiceError2
+                ]
+            });
+        });
+
+    setGetServiceConfigResp(internal);
+    setGetRecentBlockhashResp(internal);    
+    
+    client = new Client(Environment.Test, {
+        appIndex: 1,
+        internal: instance(internal),
+        kinVersion: 4,
+    });
+
+    const result = await client.submitEarnBatch({
+        sender: sender,
+        earns: earns,
+    });
+    expect(result.txId).toEqual(Buffer.alloc(32));
+    expect(result.txError).toBeInstanceOf(TransactionRejected);
+    expect(result.earnErrors).toBeDefined();
+    
+    expect(result.earnErrors!).toHaveLength(2);
+    expect(result.earnErrors![0].earnIndex).toEqual(1);
+    expect(result.earnErrors![0].error).toBeInstanceOf(SkuNotFound);
+    expect(result.earnErrors![1].earnIndex).toEqual(3);
+    expect(result.earnErrors![1].error).toBeInstanceOf(AlreadyPaid);
 });
 
 // Migration Tests
@@ -2348,12 +2445,13 @@ test("submitPayment migration", async() => {
         tx: SolanaTransaction,
         invoice?: commonpb.InvoiceList,
         commitment?: Commitment,
+        dedupeId?: Buffer,
     }
     let request: submitRequest | undefined;
     const txId = Buffer.from("someid");
-    when (internal.submitSolanaTransaction(anything(), anything(), anything()))
-        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment) => {
-            request = {tx, invoice, commitment};
+    when(internal.submitSolanaTransaction(anything(), anything(), anything(), anything()))
+        .thenCall((tx: SolanaTransaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
+            request = {tx, invoice, commitment, dedupeId};
             const result = new SubmitTransactionResult();
             result.TxId = txId;
             return Promise.resolve(result);
@@ -2400,5 +2498,5 @@ test("submitPayment migration", async() => {
     expect(tokenInstruction.amount).toEqual(BigInt(payment.quarks));
 
     expect(version).toEqual(4);
-    verify(internal.submitSolanaTransaction(anything(), anything(), anything())).times(1);
+    verify(internal.submitSolanaTransaction(anything(), anything(), anything(), anything())).times(1);
 });

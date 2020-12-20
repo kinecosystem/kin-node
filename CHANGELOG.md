@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## [0.3.10](https://github.com/kinecosystem/kin-node/releases/tag/0.3.10)
+- Add `dedupeId` support on payments (`Client.submitPayment`) and earn batches (`Client.submitEarnBatch`)
+- `Client.submitEarnBatch` now supports submitting only a single transaction and up to 15 earns
+- `EarnBatchResult` is now an interface with `txId`, `txError` and `earnErrors`
+
 ## [0.3.9](https://github.com/kinecosystem/kin-node/releases/tag/0.3.9)
 - Add `PaymentErrors` on `TransactionErrors`
 - Fix parsing transaction error in `Client.submitPayment`

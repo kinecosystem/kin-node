@@ -1,5 +1,6 @@
 import { xdr } from "stellar-base";
-import modelpb from "@kinecosystem/agora-api/node/common/v4/model_pb";
+import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
+import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import {
     errorsFromXdr,
     Malformed,
@@ -15,9 +16,13 @@ import {
     errorFromProto,
     errorsFromSolanaTx,
     errorsFromStellarTx,
+    AlreadyPaid,
+    WrongDestination,
+    SkuNotFound,
+    invoiceErrorFromProto,
 } from "../src/errors";
 import { Transaction as SolanaTransaction } from "@solana/web3.js";
-import { PublicKey, PrivateKey } from "../src";
+import { PrivateKey } from "../src";
 import { AuthorityType, TokenProgram } from "../src/solana/token-program";
 import { MemoProgram } from "../src/solana/memo-program";
 
@@ -178,29 +183,29 @@ test("operation errors", () => {
 test("errorFromProto", () => {
     const testCases = [
         {
-            reason: modelpb.TransactionError.Reason.NONE,
+            reason: commonpbv4.TransactionError.Reason.NONE,
             expected: undefined,
         },
         {
-            reason: modelpb.TransactionError.Reason.UNAUTHORIZED,
+            reason: commonpbv4.TransactionError.Reason.UNAUTHORIZED,
             expected: InvalidSignature,
         },
         {
-            reason: modelpb.TransactionError.Reason.BAD_NONCE,
+            reason: commonpbv4.TransactionError.Reason.BAD_NONCE,
             expected: BadNonce,
         },
         {
-            reason: modelpb.TransactionError.Reason.INSUFFICIENT_FUNDS,
+            reason: commonpbv4.TransactionError.Reason.INSUFFICIENT_FUNDS,
             expected: InsufficientBalance,
         },
         {
-            reason: modelpb.TransactionError.Reason.INVALID_ACCOUNT,
+            reason: commonpbv4.TransactionError.Reason.INVALID_ACCOUNT,
             expected: AccountDoesNotExist,
         },
     ];
 
     testCases.forEach((tc) => {
-        const protoError = new modelpb.TransactionError();
+        const protoError = new commonpbv4.TransactionError();
         protoError.setReason(tc.reason);
         const error = errorFromProto(protoError);
         if (tc.expected) {
@@ -208,6 +213,34 @@ test("errorFromProto", () => {
         } else {
             expect(error).toBeUndefined();
         }
+    });
+});
+
+test("invoiceErrorFromProto", () => {
+    const testCases = [
+        {
+            reason: commonpb.InvoiceError.Reason.UNKNOWN,
+            expected: Error,
+        },
+        {
+            reason: commonpb.InvoiceError.Reason.ALREADY_PAID,
+            expected: AlreadyPaid,
+        },
+        {
+            reason: commonpb.InvoiceError.Reason.WRONG_DESTINATION,
+            expected: WrongDestination,
+        },
+        {
+            reason: commonpb.InvoiceError.Reason.SKU_NOT_FOUND,
+            expected: SkuNotFound,
+        },
+    ];
+
+    testCases.forEach((tc) => {
+        const protoError = new commonpb.InvoiceError();
+        protoError.setReason(tc.reason);
+        const error = invoiceErrorFromProto(protoError);
+        expect(error).toBeInstanceOf(tc.expected);
     });
 });
 
@@ -245,8 +278,8 @@ test("errorFromSolanaTx", () => {
         },
     ];
     testCases.forEach(tc => {
-        const protoError = new modelpb.TransactionError();
-        protoError.setReason(modelpb.TransactionError.Reason.INVALID_ACCOUNT);
+        const protoError = new commonpbv4.TransactionError();
+        protoError.setReason(commonpbv4.TransactionError.Reason.INVALID_ACCOUNT);
         protoError.setInstructionIndex(tc.index);
 
         const errors = errorsFromSolanaTx(tx, protoError);
@@ -297,8 +330,8 @@ test("errorFromStellarTx", () => {
     ];
 
     testCases.forEach(tc => {
-        const protoError = new modelpb.TransactionError();
-        protoError.setReason(modelpb.TransactionError.Reason.INVALID_ACCOUNT);
+        const protoError = new commonpbv4.TransactionError();
+        protoError.setReason(commonpbv4.TransactionError.Reason.INVALID_ACCOUNT);
         protoError.setInstructionIndex(tc.index);
 
         const errors = errorsFromStellarTx(env, protoError);
