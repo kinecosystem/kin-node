@@ -9,12 +9,12 @@ import { TokenInstruction } from "./solana/token-program";
 export class TransactionErrors {
     // If TxError is defined, the transaction failed.
     TxError?: Error;
-    
+
     // OpErrors may or may not be set if TxErrors is set. If set, the length of
     // OpErrors will match the number of operations/instructions in the transaction.
     OpErrors?: Error[];
 
-    // PaymentErrors may or may not be set if TxErrors is set. If set, the length of 
+    // PaymentErrors may or may not be set if TxErrors is set. If set, the length of
     // PaymentErrors will match the number of payments/transfers in the transaction.
     PaymentErrors?: Error[];
 }
@@ -25,7 +25,7 @@ export function errorsFromSolanaTx(tx: Transaction, protoError: commonpbv4.Trans
     if (!err) {
         return errors;
     }
-    
+
     errors.TxError = err;
     if (protoError.getInstructionIndex() >= 0) {
         errors.OpErrors = new Array<Error>(tx.instructions.length);
@@ -52,7 +52,7 @@ export function errorsFromSolanaTx(tx: Transaction, protoError: commonpbv4.Trans
             errors.PaymentErrors[pIndex] = err;
         }
     }
-    
+
     return errors;
 }
 
@@ -62,7 +62,7 @@ export function errorsFromStellarTx(env: xdr.TransactionEnvelope, protoError: co
     if (!err) {
         return errors;
     }
-    
+
     errors.TxError = err;
     if (protoError.getInstructionIndex() >= 0) {
         const ops = env.v0().tx().operations();
@@ -366,6 +366,7 @@ export class NoTokenAccounts extends Error {
 // nonRetriableErrors contains the set of errors that should not be retried without modifications to the transaction.
 export const nonRetriableErrors = [
     AccountExists,
+    AccountDoesNotExist,
     Malformed,
     SenderDoesNotExist,
     DestinationDoesNotExist,
