@@ -163,7 +163,7 @@ export class Internal {
                         return;
                     }
 
-                    return resolve(resp.getVersion());
+                    resolve(resp.getVersion());
                 });
             });
         }, ...this.strategies);
@@ -215,7 +215,7 @@ export class Internal {
                         return;
                     }
 
-                    return resolve(resp.getAccountInfo());
+                    resolve(resp.getAccountInfo()!);
                 });
             });
         }, ...this.strategies);
@@ -373,23 +373,31 @@ export class Internal {
             req.setTransaction(protoTx);
             req.setCommitment(commitmentToProto(commitment));
 
-            this.accountClientV4.createAccount(req, this.metadata, (err, resp) => {
-                if (err) {
-                    throw err;
-                }
-                
-                switch (resp.getResult()) {
-                    case accountpbv4.CreateAccountResponse.Result.EXISTS:
-                        throw new AccountExists();
-                    case accountpbv4.CreateAccountResponse.Result.PAYER_REQUIRED:
-                        throw new PayerRequired();
-                    case accountpbv4.CreateAccountResponse.Result.BAD_NONCE:
-                        throw new BadNonce();
-                    case accountpbv4.CreateAccountResponse.Result.OK:
-                        return Promise.resolve();
-                    default:
-                        throw new Error("unexpected result from Agora: " + resp.getResult());
-                }
+            return new Promise<void>((resolve, reject) => {
+                this.accountClientV4.createAccount(req, this.metadata, (err, resp) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    
+                    switch (resp.getResult()) {
+                        case accountpbv4.CreateAccountResponse.Result.EXISTS:
+                            reject(new AccountExists());
+                            break;
+                        case accountpbv4.CreateAccountResponse.Result.PAYER_REQUIRED:
+                            reject(new PayerRequired());
+                            break;
+                        case accountpbv4.CreateAccountResponse.Result.BAD_NONCE:
+                            reject(new BadNonce());
+                            break;
+                        case accountpbv4.CreateAccountResponse.Result.OK:
+                            resolve();
+                            break;
+                        default:
+                            reject(Error("unexpected result from Agora: " + resp.getResult()));
+                            break;
+                    }
+                });
             });
         };
 
@@ -419,7 +427,7 @@ export class Internal {
                         return;
                     }
 
-                    return resolve(resp.getAccountInfo()!);
+                    resolve(resp.getAccountInfo()!);
                 });
             });
         }, ...this.strategies);

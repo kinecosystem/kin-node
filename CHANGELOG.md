@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.3.11](https://github.com/kinecosystem/kin-node/releases/tag/0.3.11)
+- Add AccountExists to the default non-retriable error list. This should the decrease
+  latencies in situations where a Resolve() is required by about 8 seconds (with the
+  default retry configuration)
+- Fix Solana create account error crash
+
 ## [0.3.10](https://github.com/kinecosystem/kin-node/releases/tag/0.3.10)
 - Add `dedupeId` support on payments (`Client.submitPayment`) and earn batches (`Client.submitEarnBatch`)
 - `Client.submitEarnBatch` now supports submitting only a single transaction and up to 15 earns
