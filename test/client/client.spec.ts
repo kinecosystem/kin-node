@@ -8,7 +8,7 @@ import { PublicKey as SolanaPublicKey, Transaction as SolanaTransaction} from "@
 import { v4 as uuidv4 } from 'uuid';
 
 import accountpb from "@kinecosystem/agora-api/node/account/v3/account_service_pb";
-import accountpbv4, { ResolveTokenAccountsRequest } from "@kinecosystem/agora-api/node/account/v4/account_service_pb";
+import accountpbv4 from "@kinecosystem/agora-api/node/account/v4/account_service_pb";
 import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
@@ -2331,6 +2331,56 @@ test("submitEarnBatch Kin 4 invoice errors", async() => {
     expect(result.earnErrors![0].error).toBeInstanceOf(SkuNotFound);
     expect(result.earnErrors![1].earnIndex).toEqual(3);
     expect(result.earnErrors![1].error).toBeInstanceOf(AlreadyPaid);
+});
+
+test("requestAirdrop", async() => {
+    const internal = mock(InternalClient);
+
+    const pk = PrivateKey.random();
+    let client = new Client(Environment.Prod, {
+        internal: instance(internal),
+        kinVersion: 4,
+    });
+
+    interface airdropReq {
+        publicKey: PublicKey,
+        quarks: BigNumber,
+        commitment?: Commitment,
+    }
+    let r: airdropReq | undefined;
+    when(internal.requestAirdrop(anything(), anything(), anything()))
+        .thenCall((publicKey: PublicKey, quarks: BigNumber, commitment: Commitment) => {
+            r = {publicKey, quarks, commitment};
+            return Promise.resolve(Buffer.alloc(32));
+        });
+
+    try {
+        await client.requestAirdrop(pk.publicKey(), new BigNumber(10));
+        fail();
+    } catch (err) {
+        expect(err).toContain('test');
+        expect(r).toBeUndefined();
+    }
+
+    client = new Client(Environment.Test, {
+        internal: instance(internal),
+        kinVersion: 4,
+        defaultCommitment: Commitment.Recent,
+    });
+    
+    let txID = await client.requestAirdrop(pk.publicKey(), new BigNumber(10));
+    expect(txID).toEqual(Buffer.alloc(32));
+
+    expect(r!.publicKey.buffer).toEqual(pk.publicKey().buffer);
+    expect(r!.quarks).toEqual(new BigNumber(10));
+    expect(r!.commitment).toEqual(Commitment.Recent);
+
+    txID = await client.requestAirdrop(pk.publicKey(), new BigNumber(10), Commitment.Max);
+    expect(txID).toEqual(Buffer.alloc(32));
+
+    expect(r!.publicKey.buffer).toEqual(pk.publicKey().buffer);
+    expect(r!.quarks).toEqual(new BigNumber(10));
+    expect(r!.commitment).toEqual(Commitment.Max);
 });
 
 // Migration Tests

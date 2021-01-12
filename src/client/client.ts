@@ -99,6 +99,7 @@ export class Client {
     appIndex?:          number;
     whitelistKey?:      PrivateKey;
     kinVersion:         number;
+    env:                Environment;
     issuer?:            string;
     defaultCommitment:  Commitment;
     accountCache:       LRUCache<string, string>;
@@ -154,6 +155,7 @@ export class Client {
             default:
                 throw new Error("unsupported env:" + env);
         }
+        this.env = env;
 
         if (conf) {
             this.appIndex = conf.appIndex;
@@ -174,7 +176,7 @@ export class Client {
             this.retryConfig.maxNonceRefreshes = conf?.retryConfig?.maxNonceRefreshes;
         }
 
-        if (conf?.defaultCommitment) {
+        if (conf?.defaultCommitment !== undefined) {
             this.defaultCommitment = conf?.defaultCommitment;
         } else {
             this.defaultCommitment = Commitment.Single;
@@ -501,10 +503,19 @@ export class Client {
     // resolveTokenAccounts resolves the token accounts ovned by the specified account on kin 4.
     async resolveTokenAccounts(account: PublicKey): Promise<PublicKey[]> {
         if (this.kinVersion !== 4) {
-            return Promise.reject("`resolve_token_accounts` is only available on Kin 4");
+            return Promise.reject("`resolveTokenAccounts` is only available on Kin 4");
         }
 
         return this.getTokenAccounts(account);
+    }
+
+    // requestAirdrop requests an airdrop of Kin to a Kin account. Only available on Kin 4 on the test environment.
+    async requestAirdrop(publicKey: PublicKey, quarks: BigNumber, commitment: Commitment = this.defaultCommitment): Promise<Buffer> {
+        if (this.env !== Environment.Test) {
+            return Promise.reject("`requestAirdrop` is only available on the test environment");
+        }
+
+        return this.internal.requestAirdrop(publicKey, quarks, commitment);
     }
 
     private async submitPaymentWithResolution(

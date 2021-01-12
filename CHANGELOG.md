@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## [0.4.0](https://github.com/kinecosystem/kin-node/releases/tag/0.4.0)
+- Expose `requestAirdrop` on `Client` for Kin 4
+
 ## [0.3.11](https://github.com/kinecosystem/kin-node/releases/tag/0.3.11)
 - Add AccountExists to the default non-retriable error list. This should the decrease
   latencies in situations where a Resolve() is required by about 8 seconds (with the
