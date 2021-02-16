@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- Remove Stellar (Kin 2 & Kin 3) support
+    - Only Kin 4 and v4 Agora APIs are supported
+    - Removed `accountClient`, `txClient`, `kinVersion`, `whitelistKey`, and `desiredKinVersion` from `ClientConfig`
+    - Removed `channel` from `Payment` and `EarnBatch`
+    - Removed `envelope` and `txHash()` from `SignTransactionRequest` 
+    - Removed `envelope`, `signedEnvelope`, and `networkPassphrase` from `SignTransactionResponse`
+    - Removed `kin_version`, `tx_hash`, and `stellar_event` from `Event.transaction_event`
 
 ## [0.4.0](https://github.com/kinecosystem/kin-node/releases/tag/0.4.0)
 - Expose `requestAirdrop` on `Client` for Kin 4

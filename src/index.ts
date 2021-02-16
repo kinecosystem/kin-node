@@ -1,17 +1,16 @@
-import BigNumber from "bignumber.js";
-import { xdr } from "stellar-base";
-
 import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import txpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
-import { SystemInstruction, Transaction as SolanaTransaction } from "@solana/web3.js";
-
+import { Transaction as SolanaTransaction } from "@solana/web3.js";
+import BigNumber from "bignumber.js";
+import { xdr } from "stellar-base";
 import { Client } from "./client";
 import { errorsFromSolanaTx, errorsFromStellarTx, TransactionErrors } from "./errors";
 import { PrivateKey, PublicKey } from "./keys";
 import { Memo } from "./memo";
 import { MemoInstruction, MemoProgram } from "./solana/memo-program";
 import { TokenInstruction, TransferParams } from "./solana/token-program";
+
 
 export {
     Client,
@@ -203,7 +202,6 @@ export interface Payment {
     type: TransactionType
     quarks: BigNumber
 
-    channel?: PrivateKey
     subsidizer?: PrivateKey
 
     invoice?: Invoice
@@ -434,7 +432,6 @@ export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTrans
 // EarnBatch is a batch of earn payments to be sent in a transaction.
 export interface EarnBatch {
     sender: PrivateKey
-    channel?: PrivateKey
     subsidizer?: PrivateKey
 
     memo?: string

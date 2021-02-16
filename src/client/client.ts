@@ -1,69 +1,44 @@
-import grpc from "grpc";
-import hash from "hash.js";
-import BigNumber from "bignumber.js";
-import {
-    TransactionBuilder,
-    Memo,
-    MemoHash,
-    xdr,
-    Account,
-    Operation,
-    Asset
-} from "stellar-base";
-import LRUCache from 'lru-cache';
-import { Account as SolanaAccount, PublicKey as SolanaPublicKey, Transaction as SolanaTransaction, Transaction } from "@solana/web3.js";
-
-import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
-import accountgrpc from "@kinecosystem/agora-api/node/account/v3/account_service_grpc_pb";
-import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_grpc_pb";
 import accountgrpcv4 from "@kinecosystem/agora-api/node/account/v4/account_service_grpc_pb";
 import airdropgrpcv4 from "@kinecosystem/agora-api/node/airdrop/v4/airdrop_service_grpc_pb";
+import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
 import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
-
+import { Account as SolanaAccount, PublicKey as SolanaPublicKey, Transaction as SolanaTransaction, Transaction } from "@solana/web3.js";
+import BigNumber from "bignumber.js";
+import hash from "hash.js";
+import LRUCache from 'lru-cache';
 import {
     AccountResolution,
     Commitment,
-    Earn,
     EarnBatch,
     EarnBatchResult,
     EarnError,
     Environment,
-    invoiceToProto, Kin2Issuers, KinAssetCode,
+    invoiceToProto,
     Memo as KinMemo,
-    NetworkPasshrase,
     Payment,
     PrivateKey,
     PublicKey,
     TransactionData,
-    TransactionType,
+    TransactionType
 } from "../";
-import { InternalClient, SubmitTransactionResult } from "./";
-import { AlreadyPaid, SkuNotFound, WrongDestination, BadNonce, AccountDoesNotExist, NoSubsidizerError, nonRetriableErrors as nonRetriableErrorList, NoTokenAccounts, invoiceErrorFromProto, TransactionRejected } from "../errors";
-import { retryAsync, limit, retriableErrors, backoffWithJitter, binaryExpotentialDelay, nonRetriableErrors } from "../retry";
-import { InternalClientConfig } from "./internal";
+import { AccountDoesNotExist, AlreadyPaid, BadNonce, invoiceErrorFromProto, nonRetriableErrors as nonRetriableErrorList, NoSubsidizerError, NoTokenAccounts, SkuNotFound, TransactionRejected, WrongDestination } from "../errors";
+import { backoffWithJitter, binaryExpotentialDelay, limit, nonRetriableErrors, retriableErrors, retryAsync } from "../retry";
 import { MemoProgram } from "../solana/memo-program";
 import { TokenProgram } from "../solana/token-program";
+import { InternalClient, SubmitTransactionResult } from "./";
+import { InternalClientConfig } from "./internal";
+
 
 export interface ClientConfig {
     endpoint?:        string
     internal?:        InternalClient
-    accountClient?:   accountgrpc.AccountClient
-    txClient?:        transactiongrpc.TransactionClient
     accountClientV4?: accountgrpcv4.AccountClient
     airdropClientV4?: airdropgrpcv4.AirdropClient
     txClientV4?:      transactiongrpcv4.TransactionClient
 
     appIndex?: number
     retryConfig?: RetryConfig
-
-    // An optional whitelist key to sign every transaction with.
-    whitelistKey?: PrivateKey
-
-    kinVersion?: number
-    
-    // A debugging parameter to force Agora to use a minimum kin version.
-    desiredKinVersion?: number
 
     // The default commitment to use for Solana requests. Only relevant for Kin 4.
     // Defaults to Commitment.Single.
@@ -84,21 +59,15 @@ const defaultRetryConfig: RetryConfig = {
     maxNonceRefreshes: 3,
 };
 
-// Maximum size taken from: https://github.com/solana-labs/solana/blob/39b3ac6a8d29e14faa1de73d8b46d390ad41797b/sdk/src/packet.rs#L9-L13
-const maxTxSize = 1232;
-
 // Client is the primary class that should be used for interacting with kin.
 //
 // Client abstracts away the underlying blockchain implementations, allowing for
 // easier upgrades in the future.
 export class Client {
     internal:           InternalClient;
-    networkPassphrase?: string;
     retryConfig: RetryConfig;
 
     appIndex?:          number;
-    whitelistKey?:      PrivateKey;
-    kinVersion:         number;
     env:                Environment;
     issuer?:            string;
     defaultCommitment:  Commitment;
@@ -110,47 +79,27 @@ export class Client {
             if (conf?.internal) {
                 throw new Error("cannot specify both endpoint and internal client");
             }
-            if (conf?.accountClient || conf?.txClient || conf?.accountClientV4 || conf?.airdropClientV4 || conf?.txClientV4) {
+            if (conf?.accountClientV4 || conf?.airdropClientV4 || conf?.txClientV4) {
                 throw new Error("cannot specify both endpoint and gRPC clients");
             }
         } else if (conf?.internal) {
-            if (conf?.accountClient || conf?.txClient || conf?.accountClientV4 || conf?.airdropClientV4 || conf?.txClientV4) {
+            if (conf?.accountClientV4 || conf?.airdropClientV4 || conf?.txClientV4) {
                 throw new Error("cannot specify both internal and gRPC clients");
             }
         } else if (
-            (conf?.accountClient == undefined) !== (conf?.txClient == undefined) ||
-            (conf?.accountClient == undefined) !== (conf?.accountClientV4 == undefined) ||
-            (conf?.accountClient == undefined) !== (conf?.airdropClientV4 == undefined) ||
-            (conf?.accountClient == undefined) !== (conf?.txClientV4 == undefined)
+            (conf?.accountClientV4 == undefined) !== (conf?.airdropClientV4 == undefined) ||
+            (conf?.accountClientV4 == undefined) !== (conf?.txClientV4 == undefined)
         ) {
             throw new Error("either all or none of the gRPC clients must be set");
         }
 
-        if (conf?.kinVersion) {
-            this.kinVersion = conf.kinVersion;
-        } else {
-            this.kinVersion = 3;
-        }
         let defaultEndpoint: string;
         switch (env) {
             case Environment.Test:
-                this.networkPassphrase = NetworkPasshrase.Test;
                 defaultEndpoint = "api.agorainfra.dev:443";
-                if (this.kinVersion === 2) {
-                    this.networkPassphrase = NetworkPasshrase.Kin2Test;
-                    this.issuer = Kin2Issuers.Test;
-                } else if (this.kinVersion == 3)  {
-                    this.networkPassphrase = NetworkPasshrase.Test;
-                }
                 break;
             case Environment.Prod:
                 defaultEndpoint = "api.agorainfra.net:443";
-                if (this.kinVersion === 2) {
-                    this.networkPassphrase = NetworkPasshrase.Kin2Prod;
-                    this.issuer = Kin2Issuers.Prod;
-                } else if (this.kinVersion == 3)  {
-                    this.networkPassphrase = NetworkPasshrase.Prod;
-                }
                 break;
             default:
                 throw new Error("unsupported env:" + env);
@@ -159,7 +108,6 @@ export class Client {
 
         if (conf) {
             this.appIndex = conf.appIndex;
-            this.whitelistKey = conf.whitelistKey;
         }
 
         this.retryConfig = defaultRetryConfig;
@@ -192,12 +140,11 @@ export class Client {
 
         const internalConf: InternalClientConfig = {
             endpoint: conf?.endpoint,
-            accountClient: conf?.accountClient,
-            txClient: conf?.txClient,
-            kinVersion: this.kinVersion,
-            desiredKinVersion: conf?.desiredKinVersion,
+            accountClientV4: conf?.accountClientV4,
+            airdropClientV4: conf?.airdropClientV4,
+            txClientV4: conf?.txClientV4,
         };
-        if (!internalConf.endpoint && !internalConf.accountClient && !internalConf.endpoint) {
+        if (!internalConf.endpoint && !internalConf.accountClientV4 && !internalConf.endpoint) {
             internalConf.endpoint = defaultEndpoint;
         }
 
@@ -219,29 +166,9 @@ export class Client {
     // Promise.reject(new AccountExists()) is called if
     // the account already exists.
     async createAccount(key: PrivateKey, commitment: Commitment = this.defaultCommitment, subsidizer?: PrivateKey): Promise<void> {
-        switch (this.kinVersion) {
-            case 2:
-            case 3:
-                return this.internal.createStellarAccount(key)
-                    .catch(err => {
-                        if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
-                            this.kinVersion = 4;
-                            this.internal.setKinVersion(4);
-
-                            return retryAsync(async() => {
-                                return this.internal.createSolanaAccount(key, commitment, subsidizer);
-                            }, limit(this.retryConfig.maxNonceRefreshes), retriableErrors(BadNonce));
-                        }
-
-                        return Promise.reject(err);
-                    });
-            case 4:
-                return retryAsync(async() => {
-                    return this.internal.createSolanaAccount(key, commitment, subsidizer);
-                }, limit(this.retryConfig.maxNonceRefreshes), retriableErrors(BadNonce));
-            default:
-                return Promise.reject("unsupported kin version: " + this.kinVersion);
-        }
+        return retryAsync(async() => {
+            return this.internal.createSolanaAccount(key, commitment, subsidizer);
+        }, limit(this.retryConfig.maxNonceRefreshes), retriableErrors(BadNonce));
     }
 
     // getBalance retrieves the balance for an account.
@@ -249,44 +176,23 @@ export class Client {
     // Promise.reject(new AccountDoesNotExist()) is called if
     // the specified account does not exist.
     async getBalance(account: PublicKey, commitment: Commitment = this.defaultCommitment, accountResolution: AccountResolution = AccountResolution.Preferred): Promise<BigNumber> {
-        if (this.kinVersion > 4 || this.kinVersion < 2) {
-            return Promise.reject("unsupported kin version: " + this.kinVersion);
-        }
-
-        const solanaFn = async (): Promise<BigNumber> => {
-            return this.internal.getSolanaAccountInfo(account, commitment)
-                .then(info => new BigNumber(info.getBalance()))
-                .catch(err => {
-                    if (err instanceof AccountDoesNotExist) {
-                        if (accountResolution == AccountResolution.Preferred) {
-                            return this.getTokenAccounts(account)
-                                .then(accounts => {
-                                    if (accounts.length > 0) {
-                                        return this.internal.getSolanaAccountInfo(accounts[0], commitment)
-                                            .then(info => new BigNumber(info.getBalance()));
-                                    }
-                                    return Promise.reject(err);
-                                });
-                        }
+        return this.internal.getSolanaAccountInfo(account, commitment)
+            .then(info => new BigNumber(info.getBalance()))
+            .catch(err => {
+                if (err instanceof AccountDoesNotExist) {
+                    if (accountResolution == AccountResolution.Preferred) {
+                        return this.getTokenAccounts(account)
+                            .then(accounts => {
+                                if (accounts.length > 0) {
+                                    return this.internal.getSolanaAccountInfo(accounts[0], commitment)
+                                        .then(info => new BigNumber(info.getBalance()));
+                                }
+                                return Promise.reject(err);
+                            });
                     }
-                    return Promise.reject(err);
-                });
-        };
-
-        if (this.kinVersion < 4) {
-            return this.internal.getAccountInfo(account)
-                .then(info => new BigNumber(info.getBalance()))
-                .catch(err => {
-                    if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
-                        this.kinVersion = 4;
-                        this.internal.setKinVersion(4);
-                        return solanaFn();
-                    }
-                    return Promise.reject(err);
-                });
-        }
-
-        return solanaFn();
+                }
+                return Promise.reject(err);
+            });
     }
 
     // getTransaction retrieves the TransactionData for a txId.
@@ -295,15 +201,7 @@ export class Client {
     // is called. In this state, the transaction may or may not resolve in
     // the future, it is simply unknown _at this time_.
     async getTransaction(txId: Buffer, commitment: Commitment = this.defaultCommitment): Promise<TransactionData|undefined> {
-        switch (this.kinVersion) {
-            case 2:
-            case 3:
-                return this.internal.getStellarTransaction(txId);
-            case 4:
-                return this.internal.getTransaction(txId, commitment);
-            default:
-                return Promise.reject("unsupported kin version: " + this.kinVersion);
-        }
+        return this.internal.getTransaction(txId, commitment);
     }
 
     // submitPayment submits a payment.
@@ -314,80 +212,12 @@ export class Client {
         payment: Payment, commitment: Commitment = this.defaultCommitment, senderResolution: AccountResolution = AccountResolution.Preferred, 
         destinationResolution: AccountResolution = AccountResolution.Preferred
     ): Promise<Buffer> {
-        if (this.kinVersion > 4 || this.kinVersion < 2) {
-            return Promise.reject("unsupported kin version: " + this.kinVersion);
-        }
-
         if (payment.invoice && !this.appIndex) {
             return Promise.reject("cannot submit payment with invoices without an app index");
         }
 
         let result: SubmitTransactionResult;
-        if (this.kinVersion === 4) {
-            result = await this.submitPaymentWithResolution(payment, commitment, senderResolution, destinationResolution);
-        } else {
-            let signers: PrivateKey[];
-            if (payment.channel && !payment.channel!.equals(payment.sender)) {
-                signers = [payment.channel, payment.sender];
-            } else {
-                signers = [payment.sender];
-            }
-
-            let memo: Memo | undefined;
-            let invoiceList: commonpb.InvoiceList | undefined;
-            if (payment.memo) {
-                memo = Memo.text(payment.memo);
-            } else if (this.appIndex) {
-                let fk = Buffer.alloc(29);
-
-                if (payment.invoice) {
-                    invoiceList = new commonpb.InvoiceList();
-                    invoiceList.addInvoices(invoiceToProto(payment.invoice));
-
-                    const serialized = invoiceList.serializeBinary();
-                    fk = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex");
-                }
-
-                const kinMemo = KinMemo.new(1, payment.type, this.appIndex!, fk);
-                memo = new Memo(MemoHash, kinMemo.buffer);
-            }
-
-            let asset: Asset;
-            let quarksConversion: number;
-            if (this.kinVersion === 2) {
-                asset = new Asset(KinAssetCode, this.issuer);
-                quarksConversion = 1e5;
-            } else {
-                asset = Asset.native();
-                // In Kin, the base currency has been 'scaled' by
-                // a factor of 100 from stellar. That is, 1 Kin is 100x
-                // 1 XLM, and the minimum amount is 1e-5 instead of 1e-7.
-                //
-                // Since js-stellar's amount here is an XLM (equivalent to Kin),
-                // we need to convert it to a quark (divide by 1e5), and then also
-                // account for the 100x scaling factor. 1e5 / 100 = 1e7.
-                quarksConversion = 1e7;
-            }
-
-            const op = Operation.payment({
-                source: payment.sender.publicKey().stellarAddress(),
-                destination: payment.destination.stellarAddress(),
-                asset: asset,
-                amount: payment.quarks.dividedBy(quarksConversion).toFixed(7),
-            });
-
-            // TODO: handle version
-            result = await this.signAndSubmit(signers, [op], memo, invoiceList)
-                .catch(err => {
-                    if (err.code && err.code === grpc.status.FAILED_PRECONDITION) {
-                        this.kinVersion = 4;
-                        this.internal.setKinVersion(4);
-                        return this.submitPaymentWithResolution(payment, commitment, senderResolution, destinationResolution);
-                    }
-                    return Promise.reject(err);
-                });            
-        }
-
+        result = await this.submitPaymentWithResolution(payment, commitment, senderResolution, destinationResolution);
         if (result.Errors && result.Errors.PaymentErrors) {
             if (result.Errors.PaymentErrors.length != 1) {
                 return Promise.reject(new Error("invalid number of payemnt errors. expected 0 or 1"));
@@ -426,10 +256,6 @@ export class Client {
         batch: EarnBatch, commitment: Commitment = this.defaultCommitment, senderResolution: AccountResolution = AccountResolution.Preferred, 
         destinationResolution: AccountResolution = AccountResolution.Preferred
     ): Promise<EarnBatchResult> {
-        if (this.kinVersion !== 4 && this.kinVersion !== 3 && this.kinVersion !== 2) {
-            return Promise.reject("unsupported kin version: " + this.kinVersion);
-        }
-
         if (batch.earns.length === 0) {
             return Promise.reject(new Error("An EarnBatch must contain at least 1 earn."));
         }
@@ -456,17 +282,11 @@ export class Client {
             }
         }
 
-        let submitResult: SubmitTransactionResult;
-
-        if (this.kinVersion === 2 || this.kinVersion === 3) {
-            submitResult = await this.submitSingleEarnBatch(batch);
-        } else {
-            const serviceConfig = await this.internal.getServiceConfig();
-            if (!serviceConfig.getSubsidizerAccount() && !batch.subsidizer) {
-                return Promise.reject(new NoSubsidizerError());
-            }
-            submitResult = await this.submitEarnBatchWithResolution(batch, serviceConfig, commitment, senderResolution, destinationResolution);
+        const serviceConfig = await this.internal.getServiceConfig();
+        if (!serviceConfig.getSubsidizerAccount() && !batch.subsidizer) {
+            return Promise.reject(new NoSubsidizerError());
         }
+        const submitResult = await this.submitEarnBatchWithResolution(batch, serviceConfig, commitment, senderResolution, destinationResolution);
 
         const result: EarnBatchResult = {
             txId: submitResult.TxId,
@@ -502,10 +322,6 @@ export class Client {
 
     // resolveTokenAccounts resolves the token accounts ovned by the specified account on kin 4.
     async resolveTokenAccounts(account: PublicKey): Promise<PublicKey[]> {
-        if (this.kinVersion !== 4) {
-            return Promise.reject("`resolveTokenAccounts` is only available on Kin 4");
-        }
-
         return this.getTokenAccounts(account);
     }
 
@@ -713,78 +529,6 @@ export class Client {
         return this.signAndSubmitSolanaTx(signers, tx, commitment, invoiceList, batch.dedupeId);
     }
 
-    private async submitSingleEarnBatch(batch: EarnBatch): Promise<SubmitTransactionResult> {
-        let signers: PrivateKey[];
-        if (batch.channel && !batch.channel!.equals(batch.sender)) {
-            signers = [batch.channel, batch.sender];
-        } else {
-            signers = [batch.sender];
-        }
-
-        const ops: xdr.Operation[] = [];
-
-        let asset: Asset;
-        let quarksConversion: number;
-        if (this.kinVersion === 2) {
-            asset = new Asset(KinAssetCode, this.issuer);
-            quarksConversion = 1e5;
-        } else {
-            asset = Asset.native();
-            // In Kin, the base currency has been 'scaled' by
-            // a factor of 100 from stellar. That is, 1 Kin is 100x
-            // 1 XLM, and the minimum amount is 1e-5 instead of 1e-7.
-            //
-            // Since js-stellar's amount here is an XLM (equivalent to Kin),
-            // we need to convert it to a quark (divide by 1e5), and then also
-            // account for the 100x scaling factor. 1e5 / 100 = 1e7.
-            quarksConversion = 1e7;
-        }
-
-        for (const e of batch.earns) {
-            ops.push(Operation.payment({
-                source: batch.sender.publicKey().stellarAddress(),
-                destination: e.destination.stellarAddress(),
-                asset: asset,
-                amount: e.quarks.dividedBy(quarksConversion).toFixed(7),
-            }));
-        }
-
-        let memo: Memo | undefined;
-        let invoiceList: commonpb.InvoiceList | undefined;
-        if (batch.memo) {
-            memo = Memo.text(batch.memo);
-        } else if (this.appIndex) {
-            invoiceList = new commonpb.InvoiceList();
-            for (const r of batch.earns) {
-                if (r.invoice) {
-                    invoiceList.addInvoices(invoiceToProto(r.invoice));
-                }
-            }
-
-            let fk = Buffer.alloc(29);
-            if (invoiceList.getInvoicesList().length > 0) {
-                if (invoiceList.getInvoicesList().length != batch.earns.length) {
-                    return Promise.reject(new Error("either all or none of the earns should have an invoice"));
-                }
-
-                const serialized = invoiceList.serializeBinary();
-                fk = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex");
-            } else {
-                invoiceList = undefined;
-            }
-
-            const kinMemo = KinMemo.new(1, TransactionType.Earn, this.appIndex!, fk);
-            memo = new Memo(MemoHash, kinMemo.buffer);
-        }
-
-        const result = await this.signAndSubmit(signers, ops, memo, invoiceList);
-        if (result.InvoiceErrors) {
-            return Promise.reject(new Error("unexpected invoice errors present"));
-        }
-
-        return Promise.resolve(result);
-    }
-
     private async signAndSubmitSolanaTx(
         signers: PrivateKey[], tx: SolanaTransaction, commitment: Commitment, invoiceList?: commonpb.InvoiceList, dedupeId?: Buffer,
     ): Promise<SubmitTransactionResult> {
@@ -796,61 +540,6 @@ export class Client {
 
             result = await this.internal.submitSolanaTransaction(tx, invoiceList, commitment, dedupeId);
             if (result.Errors && result.Errors.TxError instanceof BadNonce) {
-                return Promise.reject(new BadNonce());
-            }
-
-            return result;
-        };
-
-        return retryAsync(fn, limit(this.retryConfig.maxNonceRefreshes), retriableErrors(BadNonce)).catch(err => {
-            if (err instanceof BadNonce) {
-                return Promise.resolve(result);
-            }
-            return Promise.reject(err);
-        });
-    }
-
-    private async signAndSubmit(signers: PrivateKey[],  operations: xdr.Operation[], memo?: Memo, invoiceList?: commonpb.InvoiceList):  Promise<SubmitTransactionResult> {
-        const accountInfo = await this.internal.getAccountInfo(signers[0].publicKey());
-        let offset = new BigNumber(0);
-
-        let result: SubmitTransactionResult;
-        const fn = async () => {
-            const sequence = new BigNumber(accountInfo.getSequenceNumber()).plus(offset);
-            const builder = new TransactionBuilder(
-                new Account(signers[0].publicKey().stellarAddress(), sequence.toString()),
-                {
-                    fee: "100",
-                    networkPassphrase: this.networkPassphrase,
-                    v1: false,
-                }
-            );
-            builder.setTimeout(3600);
-            for (const op of operations) {
-                builder.addOperation(op);
-            }
-            if (memo) {
-                builder.addMemo(memo!);
-            }
-
-            const tx = builder.build();
-            tx.sign(...signers.map(s => s.kp));
-
-            if (this.whitelistKey) {
-                let signed = false;
-                for (const s of signers) {
-                    if (s.equals(this.whitelistKey!)) {
-                        signed = true;
-                    }
-                }
-                if (!signed) {
-                    tx.sign(this.whitelistKey.kp);
-                }
-            }
-
-            result = await this.internal.submitStellarTransaction(tx.toEnvelope(), invoiceList);
-            if (result.Errors && result.Errors.TxError instanceof BadNonce) {
-                offset = offset.plus(1);
                 return Promise.reject(new BadNonce());
             }
 

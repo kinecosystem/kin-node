@@ -25,7 +25,7 @@ async function run(): Promise<void> {
         type: TransactionType.Spend,
         quarks: kinToQuarks("1"),
     });
-    console.log(`tx: ${txHash.toString('hex')}`)
+    console.log(`tx: ${txHash.toString('hex')}`);
 
     // Send 1 kin with a text memo.
     txHash = await client.submitPayment({
@@ -35,7 +35,7 @@ async function run(): Promise<void> {
         quarks: kinToQuarks("1"),
         memo: "1-test"
     });
-    console.log(`tx: ${txHash.toString('hex')}`)
+    console.log(`tx: ${txHash.toString('hex')}`);
 
     // Send 1 kin with an invoice
     txHash = await client.submitPayment({
@@ -54,7 +54,7 @@ async function run(): Promise<void> {
             ],
         },
     });
-    console.log(`tx: ${txHash.toString('hex')}`)
+    console.log(`tx: ${txHash.toString('hex')}`);
 }
 
 run().catch(e => console.log(e));

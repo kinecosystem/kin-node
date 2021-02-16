@@ -1,5 +1,5 @@
+import bs58 from "bs58";
 import express from "express";
-import { Keypair } from "stellar-base";
 import { Environment, PrivateKey } from "../../src";
 import { Event, EventsHandler, SignTransactionHandler, SignTransactionRequest, SignTransactionResponse } from "../../src/webhook";
 
@@ -17,14 +17,14 @@ const app = express();
 
 app.use("/events", express.json());
 app.use("/events", EventsHandler((events: Event[]) => {
-    for (let e of events) {
-        console.log(`received event: ${JSON.stringify(e)}`)
+    for (const e of events) {
+        console.log(`received event: ${JSON.stringify(e)}`);
     }
 }, secret));
 
-app.use("/sign_transaction", express.json())
+app.use("/sign_transaction", express.json());
 app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: SignTransactionRequest, resp: SignTransactionResponse) => {
-    console.log(`sign request for <'${req.userId}', '${req.userPassKey}'>: ${req.txHash().toString('hex')}`);
+    console.log(`sign request for <'${req.userId}', '${req.userPassKey}'>: ${bs58.encode(req.txId())}`);
 
     for (let i = 0; i < req.payments.length; i++) {
         const p = req.payments[i];
@@ -45,7 +45,7 @@ app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: Sign
         }
 
         if (p.invoice) {
-            for (let item of p.invoice.Items) {
+            for (const item of p.invoice.Items) {
                 if (!item.sku) {
                     // Note: in general the sku is optional. However, in this example we
                     //       mark it as SkuNotFound to facilitate testing.
@@ -61,12 +61,12 @@ app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: Sign
         return;
     }
 
-    // Note: if we didn't sign or reject, then the transaction will still go through,
-    //       but fees will be charged.
+    // Note: Calling `sign` on a Kin 4 transaction is currently a no-op, but sign functionality for Solana transactions
+    // will be added at a later date.
     resp.sign(whitelistKey);
-}, secret))
+}, secret));
 
 
 app.listen(port, () => {
     console.log(`server started at http://localhost:${ port }`);
-})
+});

@@ -1,47 +1,34 @@
-import grpc from "grpc";
-import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
-import accountpb from "@kinecosystem/agora-api/node/account/v3/account_service_pb";
-import accountgrpc from "@kinecosystem/agora-api/node/account/v3/account_service_grpc_pb";
-import transactionpb from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_pb";
-import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_grpc_pb";
-import accountpbv4 from "@kinecosystem/agora-api/node/account/v4/account_service_pb";
 import accountgrpcv4 from "@kinecosystem/agora-api/node/account/v4/account_service_grpc_pb";
-import airdroppbv4 from "@kinecosystem/agora-api/node/airdrop/v4/airdrop_service_pb";
+import accountpbv4 from "@kinecosystem/agora-api/node/account/v4/account_service_pb";
 import airdropgrpcv4 from "@kinecosystem/agora-api/node/airdrop/v4/airdrop_service_grpc_pb";
+import airdroppbv4 from "@kinecosystem/agora-api/node/airdrop/v4/airdrop_service_pb";
+import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
-import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
 import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
-import { 
+import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
+import {
     Account as SolanaAccount,
     PublicKey as SolanaPublicKey,
     SystemProgram,
-    Transaction as SolanaTransaction,
+    Transaction as SolanaTransaction, Transaction
 } from "@solana/web3.js";
+import BigNumber from "bignumber.js";
 import bs58 from "bs58";
-
-import { xdr } from "stellar-base";
-
+import grpc from "grpc";
+import LRUCache from "lru-cache";
 import {
-    PrivateKey,
+    Commitment, commitmentToProto, PrivateKey,
     PublicKey,
     TransactionData,
     TransactionErrors,
     transactionStateFromProto,
-    commitmentToProto,
-    Commitment,
-    txDataFromProto,
-    TransactionType,
-    Memo,
-    paymentsFromEnvelope,
-    TransactionState,
+    txDataFromProto
 } from "../";
-import { errorsFromXdr, AccountDoesNotExist, AccountExists, TransactionRejected, InsufficientBalance, errorsFromSolanaTx, PayerRequired, NoSubsidizerError, AlreadySubmitted, nonRetriableErrors as nonRetriableErrorsList, BadNonce, NoTokenAccounts } from "../errors";
-import { ShouldRetry, retryAsync, limit, nonRetriableErrors } from "../retry";
-import BigNumber from "bignumber.js";
-import { Transaction } from "@solana/web3.js";
+import { AccountDoesNotExist, AccountExists, AlreadySubmitted, BadNonce, errorsFromSolanaTx, InsufficientBalance, nonRetriableErrors as nonRetriableErrorsList, NoSubsidizerError, PayerRequired, TransactionRejected } from "../errors";
+import { limit, nonRetriableErrors, retryAsync, ShouldRetry } from "../retry";
 import { AccountSize, AuthorityType, TokenProgram } from "../solana/token-program";
-import LRUCache from "lru-cache";
 import { generateTokenAccount } from "./utils";
+
 
 export const SDK_VERSION = "0.2.3";
 export const USER_AGENT_HEADER = "kin-user-agent";
@@ -62,17 +49,11 @@ export class SubmitTransactionResult {
 
 export interface InternalClientConfig {
     endpoint?: string
-    accountClient?: accountgrpc.AccountClient
-    txClient?: transactiongrpc.TransactionClient
-
     accountClientV4?: accountgrpcv4.AccountClient
     airdropClientV4?: airdropgrpcv4.AirdropClient
     txClientV4?: transactiongrpcv4.TransactionClient
 
     strategies?: ShouldRetry[]
-    kinVersion?: number
-
-    desiredKinVersion?: number
 }
 
 // Internal is the low level gRPC client for Agora used by Client.
@@ -81,36 +62,27 @@ export interface InternalClientConfig {
 // it is exported in case there is some strong reason that access
 // to the underlying blockchain primitives are required.
 export class Internal {
-    txClient: transactiongrpc.TransactionClient;
-    accountClient: accountgrpc.AccountClient;
     accountClientV4: accountgrpcv4.AccountClient;
     airdropClientV4: airdropgrpcv4.AirdropClient;
     txClientV4: transactiongrpcv4.TransactionClient;
     strategies: ShouldRetry[];
     metadata: grpc.Metadata;
-    kinVersion: number;
     private responseCache: LRUCache<string, string>;
 
     constructor(config: InternalClientConfig) {
         if (config.endpoint) {
-            if (config.accountClient || config.txClient || config.accountClientV4 || config.airdropClientV4 || config.txClientV4) {
+            if (config.accountClientV4 || config.airdropClientV4 || config.txClientV4) {
                 throw new Error("cannot specify endpoint and clients");
             }
 
             const sslCreds = grpc.credentials.createSsl();
-            this.accountClient = new accountgrpc.AccountClient(config.endpoint, sslCreds);
-            this.txClient = new transactiongrpc.TransactionClient(config.endpoint, sslCreds);
-
             this.accountClientV4 = new accountgrpcv4.AccountClient(config.endpoint, sslCreds);
             this.airdropClientV4 = new airdropgrpcv4.AirdropClient(config.endpoint, sslCreds);
             this.txClientV4 = new transactiongrpcv4.TransactionClient(config.endpoint, sslCreds);
-        } else if (config.accountClient) {
-            if (!config.txClient || !config.accountClientV4 || !config.airdropClientV4 || !config.txClientV4) {
+        } else if (config.accountClientV4) {
+            if (!config.accountClientV4 || !config.airdropClientV4 || !config.txClientV4) {
                 throw new Error("must specify all gRPC clients");
             }
-
-            this.accountClient = config.accountClient;
-            this.txClient = config.txClient;
 
             this.accountClientV4 = config.accountClientV4;
             this.airdropClientV4 = config.airdropClientV4;
@@ -128,29 +100,15 @@ export class Internal {
             ];
         }
 
-        if (config.kinVersion) {
-            this.kinVersion = config.kinVersion;
-        } else {
-            this.kinVersion = 3;
-        }
-
         this.metadata = new grpc.Metadata();
         this.metadata.set(USER_AGENT_HEADER, USER_AGENT);
-        this.metadata.set(KIN_VERSION_HEADER, this.kinVersion.toString());
-        if (config.desiredKinVersion) {
-            this.metadata.set(DESIRED_KIN_VERSION_HEADER, config.desiredKinVersion!.toString());
-        }
+        this.metadata.set(KIN_VERSION_HEADER, "4");
 
         // Currently only caching GetServiceConfig, so limit to 1 entry
         this.responseCache = new LRUCache({
             max: 1,
             maxAge: 24 * 60 * 60 * 1000, // 24 hours
         });
-    }
-
-    setKinVersion(kinVersion: number): void {
-        this.kinVersion = kinVersion;
-        this.metadata.set(KIN_VERSION_HEADER, this.kinVersion.toString());
     }
 
     async getBlockchainVersion(): Promise<number> {
@@ -164,150 +122,6 @@ export class Internal {
                     }
 
                     resolve(resp.getVersion());
-                });
-            });
-        }, ...this.strategies);
-    }
-
-    async createStellarAccount(key: PrivateKey): Promise<void> {
-        const accountId = new commonpb.StellarAccountId();
-        accountId.setValue(key.publicKey().stellarAddress());
-
-        const req = new accountpb.CreateAccountRequest();
-        req.setAccountId(accountId);
-
-        return retryAsync(() => {
-            return new Promise<void>((resolve, reject) => {
-                this.accountClient.createAccount(req, this.metadata, (err, resp) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
-
-                    if (resp.getResult() == accountpb.CreateAccountResponse.Result.EXISTS) {
-                        reject(new AccountExists());
-                        return;
-                    }
-
-                    resolve();
-                });
-            });
-        }, ...this.strategies);
-    }
-
-    async getAccountInfo(account: PublicKey): Promise<accountpb.AccountInfo> {
-        const accountId = new commonpb.StellarAccountId();
-        accountId.setValue(account.stellarAddress());
-
-        const req = new accountpb.GetAccountInfoRequest();
-        req.setAccountId(accountId);
-
-        return retryAsync(() => {
-            return new Promise<accountpb.AccountInfo>((resolve, reject) => {
-                this.accountClient.getAccountInfo(req, this.metadata, (err, resp) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
-
-                    if (resp.getResult() == accountpb.GetAccountInfoResponse.Result.NOT_FOUND) {
-                        reject(new AccountDoesNotExist());
-                        return;
-                    }
-
-                    resolve(resp.getAccountInfo()!);
-                });
-            });
-        }, ...this.strategies);
-    }
-
-    async getStellarTransaction(hash: Buffer): Promise<TransactionData | undefined> {
-        const transactionHash = new commonpb.TransactionHash();
-        transactionHash.setValue(hash);
-
-        const req = new transactionpb.GetTransactionRequest();
-        req.setTransactionHash(transactionHash);
-
-        return retryAsync(() => {
-            return new Promise<TransactionData | undefined>((resolve, reject) => {
-                this.txClient.getTransaction(req, this.metadata, (err, resp) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
-
-                    const data = new TransactionData();
-                    data.txId = hash;
-
-                    switch (resp.getState()) {
-                        case transactionpb.GetTransactionResponse.State.UNKNOWN: {
-                            data.txState = TransactionState.Unknown;
-                            break;
-                        }
-                        case transactionpb.GetTransactionResponse.State.SUCCESS: {
-                            const envelope = xdr.TransactionEnvelope.fromXDR(Buffer.from(resp.getItem()!.getEnvelopeXdr()!));
-
-                            let type: TransactionType = TransactionType.Unknown;
-                            const memo = Memo.fromXdr(envelope.v0().tx().memo(), true);
-                            if (memo) {
-                                type = memo.TransactionType();
-                            }
-
-                            data.txState = TransactionState.Success;
-                            data.payments = paymentsFromEnvelope(envelope, type, resp.getItem()!.getInvoiceList(), this.kinVersion);
-                            break;
-                        }
-                        default: {
-                            reject("unknown transaction state: " + resp.getState());
-                            return;
-                        }
-                    }
-
-                    resolve(data);
-                });
-            });
-        }, ...this.strategies);
-    }
-
-    async submitStellarTransaction(envelope: xdr.TransactionEnvelope, invoiceList?: commonpb.InvoiceList): Promise<SubmitTransactionResult> {
-        const req = new transactionpb.SubmitTransactionRequest();
-        req.setEnvelopeXdr(envelope.toXDR());
-        req.setInvoiceList(invoiceList);
-
-        return retryAsync(() => {
-            return new Promise<SubmitTransactionResult>((resolve, reject) => {
-                this.txClient.submitTransaction(req, this.metadata, (err, resp) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
-
-                    const result = new SubmitTransactionResult();
-                    result.TxId = Buffer.from(resp.getHash()!.getValue()!);
-
-                    switch (resp.getResult()) {
-                        case transactionpb.SubmitTransactionResponse.Result.OK: {
-                            break;
-                        }
-                        case transactionpb.SubmitTransactionResponse.Result.REJECTED: {
-                            reject(new TransactionRejected());
-                            return;
-                        }
-                        case transactionpb.SubmitTransactionResponse.Result.INVOICE_ERROR: {
-                            result.InvoiceErrors = resp.getInvoiceErrorsList();
-                            break;
-                        }
-                        case transactionpb.SubmitTransactionResponse.Result.FAILED: {
-                            const resultXdr = xdr.TransactionResult.fromXDR(Buffer.from(resp.getResultXdr()));
-                            result.Errors = errorsFromXdr(resultXdr);
-                            break;
-                        }
-                        default:
-                            reject("unexpected result from agora: " + resp.getResult());
-                            return;
-                    }
-
-                    resolve(result);
                 });
             });
         }, ...this.strategies);

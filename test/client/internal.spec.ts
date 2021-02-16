@@ -1,39 +1,31 @@
-import grpc from "grpc";
-import { promises as fs } from "fs";
-import { BigNumber } from "bignumber.js";
-import { mock, when, anything, instance, verify, reset } from "ts-mockito";
-import { PublicKey as SolanaPublicKey, SystemInstruction, Transaction as SolanaTransaction } from "@solana/web3.js"; 
-import { v4 as uuidv4 } from 'uuid';
-import bs58 from "bs58";
-
-import accountpb from "@kinecosystem/agora-api/node/account/v3/account_service_pb";
-import accountpbv4 from "@kinecosystem/agora-api/node/account/v4/account_service_pb";
-import accountgrpc from "@kinecosystem/agora-api/node/account/v3/account_service_grpc_pb";
 import accountgrpcv4 from "@kinecosystem/agora-api/node/account/v4/account_service_grpc_pb";
+import accountpbv4 from "@kinecosystem/agora-api/node/account/v4/account_service_pb";
 import airdropgrpcv4 from "@kinecosystem/agora-api/node/airdrop/v4/airdrop_service_grpc_pb";
 import airdroppbv4 from "@kinecosystem/agora-api/node/airdrop/v4/airdrop_service_pb";
 import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
-import transactionpb from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_pb";
-import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
-import transactiongrpc from "@kinecosystem/agora-api/node/transaction/v3/transaction_service_grpc_pb";
 import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
-
-import { InternalClient } from "../../src/client";
-import { USER_AGENT_HEADER, USER_AGENT, KIN_VERSION_HEADER, InternalClientConfig, DESIRED_KIN_VERSION_HEADER } from "../../src/client/internal";
-import { xdr } from "stellar-base";
-import { AccountDoesNotExist, AccountExists, AlreadySubmitted, BadNonce, InsufficientBalance, InvalidSignature, NoSubsidizerError, PayerRequired, TransactionRejected } from "../../src/errors";
+import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
+import { PublicKey as SolanaPublicKey, SystemInstruction, Transaction as SolanaTransaction } from "@solana/web3.js";
+import { BigNumber } from "bignumber.js";
+import bs58 from "bs58";
+import { promises as fs } from "fs";
+import grpc from "grpc";
+import { anything, instance, mock, reset, verify, when } from "ts-mockito";
+import { v4 as uuidv4 } from 'uuid';
 import {
-    PrivateKey,
+    Commitment, InvoiceItem,
+    invoiceToProto, PrivateKey,
     PublicKey,
     ReadOnlyPayment,
-    InvoiceItem,
-    invoiceToProto,
-    TransactionState,
-    Commitment,
+    TransactionState
 } from "../../src";
-import { AccountSize, AuthorityType, TokenInstruction, TokenProgram } from "../../src/solana/token-program";
+import { InternalClient } from "../../src/client";
+import { KIN_VERSION_HEADER, USER_AGENT, USER_AGENT_HEADER } from "../../src/client/internal";
 import { generateTokenAccount } from "../../src/client/utils";
+import { AccountDoesNotExist, AccountExists, AlreadySubmitted, BadNonce, InsufficientBalance, NoSubsidizerError, PayerRequired, TransactionRejected } from "../../src/errors";
+import { AccountSize, AuthorityType, TokenInstruction, TokenProgram } from "../../src/solana/token-program";
+
 
 const recentBlockhash = Buffer.alloc(32);
 const minBalanceForRentExemption = 40175902;
@@ -41,7 +33,7 @@ const subsidizer = PrivateKey.random().publicKey().buffer;
 const token = PrivateKey.random().publicKey().buffer;
 const tokenProgram = PrivateKey.random().publicKey().buffer;
 
-function validateHeaders(md: grpc.Metadata, expectedVersion: string): grpc.ServiceError | undefined {
+function validateHeaders(md: grpc.Metadata): grpc.ServiceError | undefined {
     const mdMap = md.getMap();
     if (mdMap[USER_AGENT_HEADER] !== USER_AGENT) {
         return {
@@ -51,7 +43,7 @@ function validateHeaders(md: grpc.Metadata, expectedVersion: string): grpc.Servi
         };
     }
 
-    if (mdMap[KIN_VERSION_HEADER] !== expectedVersion) {
+    if (mdMap[KIN_VERSION_HEADER] !== "4") {
         return {
             name: "",
             message: "incorrect kin_version",
@@ -64,35 +56,25 @@ function validateHeaders(md: grpc.Metadata, expectedVersion: string): grpc.Servi
 
 interface TestEnv {
     client: InternalClient
-    accountClient: accountgrpc.AccountClient
-    txClient: transactiongrpc.TransactionClient
     accountClientV4: accountgrpcv4.AccountClient
     airdropClientV4: airdropgrpcv4.AirdropClient
     txClientV4: transactiongrpcv4.TransactionClient
 }
 
-function newTestEnv(kinVersion: number, desiredKinVersion?: number): TestEnv {
-    const accountClient = mock(accountgrpc.AccountClient);
-    const txClient = mock(transactiongrpc.TransactionClient);
+function newTestEnv(): TestEnv {
     const accountClientV4 = mock(accountgrpcv4.AccountClient);
     const airdropClientV4 = mock(airdropgrpcv4.AirdropClient);
     const txClientV4 = mock(transactiongrpcv4.TransactionClient);
 
     return {
         'client': new InternalClient({
-            accountClient: instance(accountClient),
-            txClient: instance(txClient),
             accountClientV4: instance(accountClientV4),
             airdropClientV4: instance(airdropClientV4),
             txClientV4: instance(txClientV4),
-            kinVersion: kinVersion,
-            desiredKinVersion: desiredKinVersion,
         }),
-        'accountClient': accountClient,
-        'txClient': txClient,
         'accountClientV4': accountClientV4,
         'airdropClientV4': airdropClientV4,
-        txClientV4: txClientV4,
+        'txClientV4': txClientV4,
     };
 }
 
@@ -111,7 +93,7 @@ function setGetServiceConfigResp(txClientV4: transactiongrpcv4.TransactionClient
             resp.setToken(tokenAccount);
             resp.setTokenProgram(tokenProgramAccount);
             
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err !== undefined) {
                 callback(err, undefined);
                 return;
@@ -133,7 +115,7 @@ function setGetServiceConfigRespNoSubsidizer(txClientV4: transactiongrpcv4.Trans
             resp.setToken(tokenAccount);
             resp.setTokenProgram(tokenProgramAccount);
             
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err !== undefined) {
                 callback(err, undefined);
                 return;
@@ -151,7 +133,7 @@ function setGetRecentBlockhashResp(txClientV4: transactiongrpcv4.TransactionClie
             const resp = new transactionpbv4.GetRecentBlockhashResponse();
             resp.setBlockhash(blockhash);
             
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err !== undefined) {
                 callback(err, undefined);
                 return;
@@ -167,7 +149,7 @@ function setGetMinBalanceResp(txClientV4: transactiongrpcv4.TransactionClient) {
             const resp = new transactionpbv4.GetMinimumBalanceForRentExemptionResponse();
             resp.setLamports(minBalanceForRentExemption);
             
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err !== undefined) {
                 callback(err, undefined);
                 return;
@@ -177,21 +159,13 @@ function setGetMinBalanceResp(txClientV4: transactiongrpcv4.TransactionClient) {
         });
 }
 
-test('config desiredKinVersion', async() => {
-    const client = newTestEnv(3, 4).client;
-    const mdMap = client.metadata.getMap();
-    expect(mdMap[USER_AGENT_HEADER]).toEqual(USER_AGENT);
-    expect(mdMap[KIN_VERSION_HEADER]).toEqual("3");
-    expect(mdMap[DESIRED_KIN_VERSION_HEADER]).toEqual("4");
-});
-
 test('getBlockchainVersion', async () => {
-    const env = newTestEnv(3);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     when(txClientV4.getMinimumKinVersion(anything(), anything(), anything()))
         .thenCall((_, md: grpc.Metadata, callback) => {
             const resp = new transactionpbv4.GetMinimumKinVersionResponse();
-            const err = validateHeaders(md, "3");
+            const err = validateHeaders(md);
             if (err !== undefined) {
                 callback(err, undefined);
                 return;
@@ -203,382 +177,11 @@ test('getBlockchainVersion', async () => {
     expect(await client.getBlockchainVersion()).toBe(4);
 });
 
-test('createStellarAccount', async () => {
-    const account = PrivateKey.random();
-    const env = newTestEnv(3);
-    const [client, accountClient] = [env.client, env.accountClient];
-
-    let created = false;
-    when(accountClient.createAccount(anything(), anything(), anything()))
-        .thenCall((_, md: grpc.Metadata, callback) => {
-            const resp = new accountpb.CreateAccountResponse();
-
-            const err = validateHeaders(md, "3");
-            if (err != undefined) {
-                callback(err, undefined);
-                return;
-            }
-
-            if (created) {
-                resp.setResult(accountpb.CreateAccountResponse.Result.EXISTS);
-            } else {
-                resp.setResult(accountpb.CreateAccountResponse.Result.OK);
-                created = true;
-            }
-            callback(undefined, resp);
-        });
-
-
-    await client.createStellarAccount(account);
-    expect(created).toBeTruthy();
-
-    try {
-        await client.createStellarAccount(account);
-        fail();
-    } catch (err) {
-        expect(err).toBeInstanceOf(AccountExists);
-    }
-});
-
-test('getStellarTransaction Kin 3', async () => {
-    const env = newTestEnv(3);
-    const [client, txClient] = [env.client, env.txClient];
-
-    const testCases: {
-        transaction_data: {
-            tx_hash: string
-            payments: {
-                sender:      string
-                destination: string
-                type:        number
-                quarks:      number
-                memo?:       string
-                invoice: {
-                    items: {
-                        title:        string
-                        description?: string
-                        amount:       string
-                        sku?:         string
-                    }[]
-                }
-            }[],
-        },
-        response: string
-    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_v3_test_kin_3.json")).toString());
-
-    let currentCase = 0;
-    when(txClient.getTransaction(anything(), anything(), anything()))
-        .thenCall((_, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "3");
-            if (err != undefined) {
-                callback(err, undefined);
-                return;
-            }
-
-            const resp = transactionpb.GetTransactionResponse
-                .deserializeBinary(Buffer.from(testCases[currentCase].response, "base64"));
-            callback(undefined, resp);
-        });
-
-    for (let i = 0; i < testCases.length; i++) {
-        currentCase = i;
-        const tc = testCases[i];
-
-        const txData = await client.getStellarTransaction(Buffer.from(tc.transaction_data.tx_hash, "base64"));
-        expect(txData).toBeDefined();
-        expect(txData!.errors).toBeUndefined();
-        expect(txData!.txId).toStrictEqual(Buffer.from(tc.transaction_data.tx_hash, "base64"));
-
-        const expectedPayments = testCases[currentCase].transaction_data.payments.map(v => {
-            const payment: ReadOnlyPayment = {
-                sender: new PublicKey(Buffer.from(v.sender, "base64")),
-                destination: new PublicKey(Buffer.from(v.destination, "base64")),
-                type: v.type,
-                quarks: new BigNumber(v.quarks).toString(),
-            };
-            if (v.memo) {
-                payment.memo = v.memo;
-            }
-            if (v.invoice) {
-                payment.invoice = {
-                    Items: v.invoice.items.map(item => {
-                        const invoiceItem: InvoiceItem = {
-                            title:       item.title,
-                            amount:      new BigNumber(item.amount),
-                        };
-                        if (item.description) {
-                            invoiceItem.description = item.description;
-                        }
-                        if (item.sku) {
-                            invoiceItem.sku = Buffer.from(item.sku, "base64");
-                        }
-                        return invoiceItem;
-                    })
-                };
-            }
-            return payment;
-        });
-        expect(txData!.payments).toStrictEqual(expectedPayments);
-    }
-});
-
-test('getStellarTransaction Kin 2', async () => {
-    const env = newTestEnv(2);
-    const [client, txClient] = [env.client, env.txClient];
-
-    const testCases: {
-        transaction_data: {
-            tx_hash: string
-            payments: {
-                sender:      string
-                destination: string
-                type:        number
-                quarks:      number
-                memo?:       string
-                invoice: {
-                    items: {
-                        title:        string
-                        description?: string
-                        amount:       string
-                        sku?:         string
-                    }[]
-                }
-            }[],
-        },
-        response: string
-    }[] = JSON.parse((await fs.readFile("test/data/get_transaction_v3_test_kin_2.json")).toString());
-
-    let currentCase = 0;
-    when(txClient.getTransaction(anything(), anything(), anything()))
-        .thenCall((_, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "2");
-            if (err != undefined) {
-                callback(err, undefined);
-                return;
-            }
-
-            const resp = transactionpb.GetTransactionResponse
-                .deserializeBinary(Buffer.from(testCases[currentCase].response, "base64"));
-            callback(undefined, resp);
-        });
-
-    for (let i = 0; i < testCases.length; i++) {
-        currentCase = i;
-        const tc = testCases[i];
-
-        const txData = await client.getStellarTransaction(Buffer.from(tc.transaction_data.tx_hash, "base64"));
-        expect(txData).toBeDefined();
-        expect(txData!.errors).toBeUndefined();
-        expect(txData!.txId).toStrictEqual(Buffer.from(tc.transaction_data.tx_hash, "base64"));
-
-        const expectedPayments = testCases[currentCase].transaction_data.payments.map(v => {
-            const payment: ReadOnlyPayment = {
-                sender: new PublicKey(Buffer.from(v.sender, "base64")),
-                destination: new PublicKey(Buffer.from(v.destination, "base64")),
-                type: v.type,
-                quarks: new BigNumber(v.quarks).toString(),
-            };
-            if (v.memo) {
-                payment.memo = v.memo;
-            }
-            if (v.invoice) {
-                payment.invoice = {
-                    Items: v.invoice.items.map(item => {
-                        const invoiceItem: InvoiceItem = {
-                            title:       item.title,
-                            amount:      new BigNumber(item.amount),
-                        };
-                        if (item.description) {
-                            invoiceItem.description = item.description;
-                        }
-                        if (item.sku) {
-                            invoiceItem.sku = Buffer.from(item.sku, "base64");
-                        }
-                        return invoiceItem;
-                    })
-                };
-            }
-            return payment;
-        });
-        expect(txData!.payments).toStrictEqual(expectedPayments);
-    }
-});
-
-test('submitStellarTranaction', async () => {
-    const env = newTestEnv(3);
-    const [client, txClient] = [env.client, env.txClient];
-
-    const hash = Buffer.from("XAoFvA3J/n9+VnQ1/UheMTJx+VBbEkeeQ8i8WJUoxkQ=", "base64");
-    const envelopeBytes = Buffer.from("AAAAAKiU54hhLR7yt7yGloTK6yrLPMXbm6v8z3qTwN7Wx81QAAAAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAQAAAAColOeIYS0e8re8hpaEyusqyzzF25ur/M96k8De1sfNUAAAAAEAAAAAXpMpylSzJtiXOe+Qel7MmgWqc+AwelwYBUeAvTf46VQAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64");
-    let invoiceList: commonpb.InvoiceList | undefined = undefined;
-
-    when(txClient.submitTransaction(anything(), anything(), anything()))
-        .thenCall((req: transactionpb.SubmitTransactionRequest, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "3");
-            if (err != undefined) {
-                callback(err, undefined);
-                return;
-            }
-
-            expect(req.getEnvelopeXdr()).toStrictEqual(envelopeBytes);
-            expect(req.getInvoiceList()).toBe(invoiceList);
-
-            const txHash = new commonpb.TransactionHash();
-            txHash.setValue(hash);
-
-            const resp = new transactionpb.SubmitTransactionResponse();
-            resp.setResult(transactionpb.SubmitTransactionResponse.Result.OK);
-            resp.setHash(txHash);
-
-            callback(undefined, resp);
-        });
-
-    let resp = await client.submitStellarTransaction(xdr.TransactionEnvelope.fromXDR(envelopeBytes));
-    expect(resp.TxId).toStrictEqual(hash);
-    expect(resp.InvoiceErrors).toBeUndefined();
-    expect(resp.Errors).toBeUndefined();
-
-    invoiceList = new commonpb.InvoiceList();
-    invoiceList.addInvoices(invoiceToProto({
-        Items: [
-            {
-                title: "hello",
-                description: "world",
-                amount: new BigNumber(10),
-            },
-        ]
-    }));
-
-    resp = await client.submitStellarTransaction(xdr.TransactionEnvelope.fromXDR(envelopeBytes), invoiceList);
-    expect(resp.TxId).toStrictEqual(hash);
-    expect(resp.InvoiceErrors).toBeUndefined();
-    expect(resp.Errors).toBeUndefined();
-});
-test('submitStellarTransaction failed', async () => {
-    const env = newTestEnv(3);
-    const [client, txClient] = [env.client, env.txClient];
-
-    const hash = Buffer.from("XAoFvA3J/n9+VnQ1/UheMTJx+VBbEkeeQ8i8WJUoxkQ=", "base64");
-    const envelopeBytes = Buffer.from("AAAAAKiU54hhLR7yt7yGloTK6yrLPMXbm6v8z3qTwN7Wx81QAAAAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAQAAAAColOeIYS0e8re8hpaEyusqyzzF25ur/M96k8De1sfNUAAAAAEAAAAAXpMpylSzJtiXOe+Qel7MmgWqc+AwelwYBUeAvTf46VQAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64");
-    const resultBytes = Buffer.from("AAAAAAAAAAD////6AAAAAA==", "base64");
-
-    when(txClient.submitTransaction(anything(), anything(), anything()))
-        .thenCall((_, __, callback) => {
-            const txHash = new commonpb.TransactionHash();
-            txHash.setValue(hash);
-
-            const resp = new transactionpb.SubmitTransactionResponse();
-            resp.setHash(txHash);
-            resp.setResult(transactionpb.SubmitTransactionResponse.Result.FAILED);
-            resp.setResultXdr(resultBytes);
-
-            callback(undefined, resp);
-        });
-
-    const resp = await client.submitStellarTransaction(xdr.TransactionEnvelope.fromXDR(envelopeBytes));
-    expect(resp.TxId).toStrictEqual(hash);
-    expect(resp.InvoiceErrors).toBeUndefined();
-    expect(resp.Errors?.TxError).toBeInstanceOf(InvalidSignature);
-});
-test('submitStellarTransaction rejected', async () => {
-    const env = newTestEnv(3);
-    const [client, txClient] = [env.client, env.txClient];
-
-    const hash = Buffer.from("XAoFvA3J/n9+VnQ1/UheMTJx+VBbEkeeQ8i8WJUoxkQ=", "base64");
-    const envelopeBytes = Buffer.from("AAAAAKiU54hhLR7yt7yGloTK6yrLPMXbm6v8z3qTwN7Wx81QAAAAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAQAAAAColOeIYS0e8re8hpaEyusqyzzF25ur/M96k8De1sfNUAAAAAEAAAAAXpMpylSzJtiXOe+Qel7MmgWqc+AwelwYBUeAvTf46VQAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64");
-
-    when(txClient.submitTransaction(anything(), anything(), anything()))
-        .thenCall((_, __, callback) => {
-            const txHash = new commonpb.TransactionHash();
-            txHash.setValue(hash);
-
-            const resp = new transactionpb.SubmitTransactionResponse();
-            resp.setHash(txHash);
-            resp.setResult(transactionpb.SubmitTransactionResponse.Result.REJECTED);
-
-            callback(undefined, resp);
-        });
-
-    try {
-        await client.submitStellarTransaction(xdr.TransactionEnvelope.fromXDR(envelopeBytes));
-        fail();
-    } catch (err) {
-        expect(err).toBeInstanceOf(TransactionRejected);
-    }
-});
-test('submitStellarTransaction invoice error', async () => {
-    const env = newTestEnv(3);
-    const [client, txClient] = [env.client, env.txClient];
-
-    const hash = Buffer.from("XAoFvA3J/n9+VnQ1/UheMTJx+VBbEkeeQ8i8WJUoxkQ=", "base64");
-    const envelopeBytes = Buffer.from("AAAAAKiU54hhLR7yt7yGloTK6yrLPMXbm6v8z3qTwN7Wx81QAAAAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAQAAAAColOeIYS0e8re8hpaEyusqyzzF25ur/M96k8De1sfNUAAAAAEAAAAAXpMpylSzJtiXOe+Qel7MmgWqc+AwelwYBUeAvTf46VQAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64");
-
-    const invoices = [
-        invoiceToProto({
-            Items: [
-                {
-                    title: "1",
-                    description: "2",
-                    amount: new BigNumber(10),
-                },
-            ]
-        }),
-        invoiceToProto({
-            Items: [
-                {
-                    title: "3",
-                    description: "4",
-                    amount: new BigNumber(10),
-                },
-            ]
-        }),
-        invoiceToProto({
-            Items: [
-                {
-                    title: "5",
-                    description: "6",
-                    amount: new BigNumber(10),
-                },
-            ]
-        }),
-    ];
-
-    when(txClient.submitTransaction(anything(), anything(), anything()))
-        .thenCall((_, __, callback) => {
-            const txHash = new commonpb.TransactionHash();
-            txHash.setValue(hash);
-
-            const invoiceErrors = new Array<commonpb.InvoiceError>(3);
-            for (let i = 0; i < 3; i++) {
-                invoiceErrors[i] = new commonpb.InvoiceError();
-                invoiceErrors[i].setOpIndex(i);
-                invoiceErrors[i].setReason(i + 1);
-                invoiceErrors[i].setInvoice(invoices[i]);
-            }
-
-            const resp = new transactionpb.SubmitTransactionResponse();
-            resp.setHash(txHash);
-            resp.setResult(transactionpb.SubmitTransactionResponse.Result.INVOICE_ERROR);
-            resp.setInvoiceErrorsList(invoiceErrors);
-
-            callback(undefined, resp);
-        });
-
-    const resp = await client.submitStellarTransaction(xdr.TransactionEnvelope.fromXDR(envelopeBytes));
-    expect(resp.Errors).toBeUndefined();
-    expect(resp.InvoiceErrors).toHaveLength(3);
-    resp.InvoiceErrors?.forEach((err, i) => {
-        expect(err.getOpIndex()).toBe(i);
-        expect(err.getReason()).toBe((i + 1) as commonpb.InvoiceError.Reason);
-        expect(err.getInvoice()).toBe(invoices[i]);
-    });
-});
-
 test('createSolanaAccount', async () => {
     const account = PrivateKey.random();
     const tokenAccount = generateTokenAccount(account);
 
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, accountClientV4, txClientV4] = [env.client, env.accountClientV4, env.txClientV4];
 
     setGetServiceConfigResp(txClientV4);
@@ -588,7 +191,7 @@ test('createSolanaAccount', async () => {
     let created = false;
     when(accountClientV4.createAccount(anything(), anything(), anything()))
         .thenCall((req: accountpbv4.CreateAccountRequest, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -651,7 +254,7 @@ test('createSolanaAccount no service subsidizer', async () => {
     const tokenAccount = generateTokenAccount(account);
     
     const appSubsidizer = PrivateKey.random();
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, accountClientV4, txClientV4] = [env.client, env.accountClientV4, env.txClientV4];
 
     setGetServiceConfigRespNoSubsidizer(txClientV4);
@@ -661,7 +264,7 @@ test('createSolanaAccount no service subsidizer', async () => {
     let created = false;
     when(accountClientV4.createAccount(anything(), anything(), anything()))
         .thenCall((req: accountpbv4.CreateAccountRequest, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -736,7 +339,7 @@ test('createSolanaAccount errors', async () => {
     ];
 
     const account = PrivateKey.random();
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, accountClientV4, txClientV4] = [env.client, env.accountClientV4, env.txClientV4];
 
     setGetServiceConfigResp(txClientV4);
@@ -746,7 +349,7 @@ test('createSolanaAccount errors', async () => {
     let currentCase = 0;
     when(accountClientV4.createAccount(anything(), anything(), anything()))
         .thenCall((_, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -773,12 +376,12 @@ test('createSolanaAccount errors', async () => {
 test('getSolanaAccountInfo', async() => {
     const account1 = PrivateKey.random().publicKey();
     const account2 = PrivateKey.random().publicKey();
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, accountClientV4] = [env.client, env.accountClientV4];
 
     when(accountClientV4.getAccountInfo(anything(), anything(), anything()))
         .thenCall((req: accountpbv4.GetAccountInfoRequest, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -813,85 +416,8 @@ test('getSolanaAccountInfo', async() => {
     }
 });
 
-test('internal retry', async () => {
-    const env = newTestEnv(3);
-    const [client, accountClient, txClient, txClientV4] = [env.client, env.accountClient, env.txClient, env.txClientV4];
-
-    const account = PrivateKey.random();
-
-    when(accountClient.createAccount(anything(), anything(), anything()))
-        .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
-                name: "",
-                message: "",
-                code: grpc.status.INTERNAL,
-            };
-            callback(err, new accountpb.CreateAccountRequest());
-        });
-    when(accountClient.getAccountInfo(anything(), anything(), anything()))
-        .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
-                name: "",
-                message: "",
-                code: grpc.status.INTERNAL,
-            };
-            callback(err, new accountpb.GetAccountInfoResponse());
-        });
-    when(txClientV4.getTransaction(anything(), anything(), anything()))
-        .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
-                name: "",
-                message: "",
-                code: grpc.status.INTERNAL,
-            };
-            callback(err, new transactionpb.GetTransactionResponse());
-        });
-    when(txClient.submitTransaction(anything(), anything(), anything()))
-        .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
-                name: "",
-                message: "",
-                code: grpc.status.INTERNAL,
-            };
-            callback(err, new transactionpb.SubmitTransactionResponse());
-        });
-
-    try {
-        await client.createStellarAccount(account);
-        fail();
-    } catch (err) {
-        expect(err).toBeDefined();
-    }
-    verify(accountClient.createAccount(anything(), anything(), anything())).times(3);
-
-    try {
-        await client.getAccountInfo(new PublicKey(Buffer.alloc(32)));
-        fail();
-    } catch (err) {
-        expect(err).toBeDefined();
-    }
-    verify(accountClient.createAccount(anything(), anything(), anything())).times(3);
-
-    try {
-        await client.getTransaction(Buffer.alloc(32));
-        fail();
-    } catch (err) {
-        expect(err).toBeDefined();
-    }
-    verify(txClientV4.getTransaction(anything(), anything(), anything())).times(3);
-
-    try {
-        const envelopeBytes = Buffer.from("AAAAAKiU54hhLR7yt7yGloTK6yrLPMXbm6v8z3qTwN7Wx81QAAAAAAAAAAAAAAABAAAAAAAAAAAAAAABAAAAAQAAAAColOeIYS0e8re8hpaEyusqyzzF25ur/M96k8De1sfNUAAAAAEAAAAAXpMpylSzJtiXOe+Qel7MmgWqc+AwelwYBUeAvTf46VQAAAAAAAAAAAAAAAoAAAAAAAAAAA==", "base64");
-        await client.submitStellarTransaction(xdr.TransactionEnvelope.fromXDR(envelopeBytes));
-        fail();
-    } catch (err) {
-        expect(err).toBeDefined();
-    }
-    verify(txClient.submitTransaction(anything(), anything(), anything())).times(3);
-});
-
 test('getTransaction Kin 3', async () => {
-    const env = newTestEnv(3);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     
     const testCases: {
@@ -920,7 +446,7 @@ test('getTransaction Kin 3', async () => {
     let currentCase = 0;
     when(txClientV4.getTransaction(anything(), anything(), anything()))
         .thenCall((_, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "3");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -975,7 +501,7 @@ test('getTransaction Kin 3', async () => {
 });
 
 test('getTransaction Kin 2', async () => {
-    const env = newTestEnv(2);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     
     const testCases: {
@@ -1004,7 +530,7 @@ test('getTransaction Kin 2', async () => {
     let currentCase = 0;
     when(txClientV4.getTransaction(anything(), anything(), anything()))
         .thenCall((_, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "2");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -1058,7 +584,7 @@ test('getTransaction Kin 2', async () => {
     }
 });
 test('getTransaction Kin 4', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     
     const testCases: {
@@ -1087,7 +613,7 @@ test('getTransaction Kin 4', async () => {
     let currentCase = 0;
     when(txClientV4.getTransaction(anything(), anything(), anything()))
         .thenCall((_, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -1141,12 +667,12 @@ test('getTransaction Kin 4', async () => {
     }
 });
 test('getTransaction Kin 4 failed', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
 
     when(txClientV4.getTransaction(anything(), anything(), anything()))
         .thenCall((_, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -1166,7 +692,7 @@ test('getTransaction Kin 4 failed', async () => {
 });
 
 test('submitSolanaTransaction', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
@@ -1189,7 +715,7 @@ test('submitSolanaTransaction', async () => {
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((req: transactionpbv4.SubmitTransactionRequest, md: grpc.Metadata, callback) => {
             submitted = req;
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -1260,7 +786,7 @@ test('submitSolanaTransaction', async () => {
     expect(Buffer.from(submitted!.getDedupeId())).toEqual(dedupeId);
 });
 test('submitSolanaTransaction already submitted', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
@@ -1329,7 +855,7 @@ test('submitSolanaTransaction already submitted', async () => {
     expect(result.Errors).toBeUndefined();
 });
 test('submitSolanaTransaction failed', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
@@ -1368,7 +894,7 @@ test('submitSolanaTransaction failed', async () => {
     expect(resp.Errors?.OpErrors![0]).toBeInstanceOf(BadNonce);
 });
 test('submitSolanaTransaction rejected', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
@@ -1405,7 +931,7 @@ test('submitSolanaTransaction rejected', async () => {
     }
 });
 test('submitSolanaTransaction payer required', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
@@ -1442,7 +968,7 @@ test('submitSolanaTransaction payer required', async () => {
     }
 });
 test('submitSolanaTransaction invoice error', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
@@ -1521,7 +1047,7 @@ test('submitSolanaTransaction invoice error', async () => {
 });
 
 test('getServiceConfig', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
 
     setGetServiceConfigResp(txClientV4);
@@ -1538,7 +1064,7 @@ test('getServiceConfig', async () => {
 });
 
 test('getRecentBlockhash', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
 
     setGetRecentBlockhashResp(txClientV4);
@@ -1548,7 +1074,7 @@ test('getRecentBlockhash', async () => {
 });
 
 test('getMinimumBalanceForRentExemption', async () => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
 
     setGetMinBalanceResp(txClientV4);
@@ -1558,7 +1084,7 @@ test('getMinimumBalanceForRentExemption', async () => {
 });
 
 test('requestAirdrop', async() => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, airdropClientV4] = [env.client, env.airdropClientV4];
 
     const [account1, account2] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
@@ -1566,7 +1092,7 @@ test('requestAirdrop', async() => {
     
     when(airdropClientV4.requestAirdrop(anything(), anything(), anything()))
         .thenCall((req: airdroppbv4.RequestAirdropRequest, md, callback) => {
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -1605,14 +1131,14 @@ test('requestAirdrop', async() => {
 });
 
 test('resolveTokenAccounts', async() => {
-    const env = newTestEnv(4);
+    const env = newTestEnv();
     const [client, accountClientV4] = [env.client, env.accountClientV4];
 
     const [account, token1, token2] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
     
     when (accountClientV4.resolveTokenAccounts(anything(), anything(), anything()))
         .thenCall((req: accountpbv4.ResolveTokenAccountsRequest, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md, "4");
+            const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
@@ -1638,7 +1164,7 @@ test('resolveTokenAccounts', async() => {
 });
 
 test('internal retry Kin 4', async () => {
-    let env = newTestEnv(4);
+    let env = newTestEnv();
     const [accountClientV4, airdropClientV4] = [env.accountClientV4, env.airdropClientV4];
     let [client, txClientV4] = [env.client, env.txClientV4];
 
@@ -1744,7 +1270,7 @@ test('internal retry Kin 4', async () => {
     }
     verify(airdropClientV4.requestAirdrop(anything(), anything(), anything())).times(3);
 
-    env = newTestEnv(4);
+    env = newTestEnv();
     client = env.client;
     txClientV4 = env.txClientV4;
     

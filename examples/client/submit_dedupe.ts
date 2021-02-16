@@ -19,7 +19,6 @@ async function run(): Promise<void> {
 
     const client = new Client(Environment.Test, {
         appIndex: 1,
-        kinVersion: 4,
     });
 
     // Send a payment with a dedupeId
