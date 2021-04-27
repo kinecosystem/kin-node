@@ -3,12 +3,14 @@ import airdropgrpcv4 from "@kinecosystem/agora-api/node/airdrop/v4/airdrop_servi
 import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
 import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
+import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Account as SolanaAccount, PublicKey as SolanaPublicKey, Transaction as SolanaTransaction, Transaction } from "@solana/web3.js";
 import BigNumber from "bignumber.js";
 import hash from "hash.js";
 import LRUCache from 'lru-cache';
 import {
     AccountResolution,
+    bigNumberToU64,
     Commitment,
     EarnBatch,
     EarnBatchResult,
@@ -25,7 +27,6 @@ import {
 import { AccountDoesNotExist, AlreadyPaid, BadNonce, invoiceErrorFromProto, nonRetriableErrors as nonRetriableErrorList, NoSubsidizerError, NoTokenAccounts, SkuNotFound, TransactionRejected, WrongDestination } from "../errors";
 import { backoffWithJitter, binaryExpotentialDelay, limit, nonRetriableErrors, retriableErrors, retryAsync } from "../retry";
 import { MemoProgram } from "../solana/memo-program";
-import { TokenProgram } from "../solana/token-program";
 import { InternalClient, SubmitTransactionResult } from "./";
 import { InternalClientConfig } from "./internal";
 
@@ -216,8 +217,7 @@ export class Client {
             return Promise.reject("cannot submit payment with invoices without an app index");
         }
 
-        let result: SubmitTransactionResult;
-        result = await this.submitPaymentWithResolution(payment, commitment, senderResolution, destinationResolution);
+        const result = await this.submitPaymentWithResolution(payment, commitment, senderResolution, destinationResolution);
         if (result.Errors && result.Errors.PaymentErrors) {
             if (result.Errors.PaymentErrors.length != 1) {
                 return Promise.reject(new Error("invalid number of payemnt errors. expected 0 or 1"));
@@ -375,8 +375,6 @@ export class Client {
     private async submitSolanaPayment(
         payment: Payment, serviceConfig: transactionpbv4.GetServiceConfigResponse, commitment: Commitment, transferSender?: PublicKey,
     ): Promise<SubmitTransactionResult> {
-        const tokenProgram = new PublicKey(Buffer.from(serviceConfig.getTokenProgram()!.getValue_asU8()));
-
         let subsidizerKey: SolanaPublicKey;
         let signers: PrivateKey[];
         if (payment.subsidizer) {
@@ -414,13 +412,15 @@ export class Client {
             sender = payment.sender.publicKey();
         }
 
-        instructions.push(TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: payment.destination.solanaKey(),
-            owner: payment.sender.publicKey().solanaKey(),
-            amount: BigInt(payment.quarks)
-        }, tokenProgram.solanaKey()));
-        
+        instructions.push(Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            payment.destination.solanaKey(),
+            payment.sender.publicKey().solanaKey(),
+            [],
+            bigNumberToU64(payment.quarks)
+        ));
+
         const tx = new Transaction({
             feePayer: subsidizerKey,
         }).add(...instructions);
@@ -467,7 +467,6 @@ export class Client {
     private async submitSolanaEarnBatch(
         batch: EarnBatch, serviceConfig: transactionpbv4.GetServiceConfigResponse, commitment: Commitment, transferSender?: PublicKey
     ): Promise<SubmitTransactionResult> {
-        const tokenProgram = new SolanaPublicKey(serviceConfig.getTokenProgram()!.getValue_asU8());
         let subsidizerId: SolanaPublicKey;
         let signers: PrivateKey[];
         if (batch.subsidizer) {
@@ -514,12 +513,14 @@ export class Client {
         }
 
         batch.earns.forEach((earn) => {
-            instructions.push(TokenProgram.transfer({
-                source: sender.solanaKey(),
-                dest: earn.destination.solanaKey(),
-                owner: batch.sender.publicKey().solanaKey(),
-                amount: BigInt(earn.quarks),
-            }, tokenProgram));
+            instructions.push(Token.createTransferInstruction(
+                TOKEN_PROGRAM_ID,
+                sender.solanaKey(),
+                earn.destination.solanaKey(),
+                batch.sender.publicKey().solanaKey(),
+                [],
+                bigNumberToU64(earn.quarks),
+            ));
         });
 
         const tx = new Transaction({

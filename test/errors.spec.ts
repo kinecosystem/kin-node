@@ -1,29 +1,29 @@
-import { xdr } from "stellar-base";
-import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
+import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
+import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Transaction as SolanaTransaction } from "@solana/web3.js";
+import { xdr } from "stellar-base";
+import { PrivateKey } from "../src";
 import {
-    errorsFromXdr,
-    Malformed,
-    TransactionFailed,
-    BadNonce,
-    InvalidSignature,
-    InsufficientBalance,
-    SenderDoesNotExist,
-    InsufficientFee,
-    DestinationDoesNotExist,
+    AccountDoesNotExist, 
     AccountExists,
-    AccountDoesNotExist,
+    AlreadyPaid, 
+    BadNonce,
+    DestinationDoesNotExist,
     errorFromProto,
     errorsFromSolanaTx,
-    errorsFromStellarTx,
-    AlreadyPaid,
-    WrongDestination,
-    SkuNotFound,
+    errorsFromStellarTx, 
+    errorsFromXdr,
+    InsufficientBalance,
+    InsufficientFee, 
+    InvalidSignature,
     invoiceErrorFromProto,
+    Malformed,
+    SenderDoesNotExist,
+    SkuNotFound, 
+    TransactionFailed,
+    WrongDestination
 } from "../src/errors";
-import { Transaction as SolanaTransaction } from "@solana/web3.js";
-import { PrivateKey } from "../src";
-import { AuthorityType, TokenProgram } from "../src/solana/token-program";
 import { MemoProgram } from "../src/solana/memo-program";
 
 test("parse no errors", () => {
@@ -245,24 +245,27 @@ test("invoiceErrorFromProto", () => {
 });
 
 test("errorFromSolanaTx", () => {
-    const tokenProgram = PrivateKey.random().publicKey().solanaKey();
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
     const tx = new SolanaTransaction({ 
         feePayer: sender.solanaKey(),
     }).add(
         MemoProgram.memo({data: "data"}),
-        TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: destination.solanaKey(),
-            owner: sender.solanaKey(),
-            amount: BigInt(100),
-        }, tokenProgram),
-        TokenProgram.setAuthority({
-            account: sender.solanaKey(),
-            currentAuthority: sender.solanaKey(),
-            newAuthority: destination.solanaKey(),
-            authorityType: AuthorityType.AccountHolder,
-        }, tokenProgram)
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        ),
+        Token.createSetAuthorityInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            'AccountOwner',
+            sender.solanaKey(),
+            [],
+        ),
     );
 
     const testCases = [

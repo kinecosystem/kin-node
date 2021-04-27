@@ -1,6 +1,7 @@
 import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import txpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
+import { u64 } from "@solana/spl-token";
 import { Transaction as SolanaTransaction } from "@solana/web3.js";
 import BigNumber from "bignumber.js";
 import { xdr } from "stellar-base";
@@ -138,6 +139,11 @@ export function xdrInt64ToBigNumber(i64: xdr.Int64): BigNumber {
     return amount;
 }
 
+export function bigNumberToU64(bn: BigNumber): u64 {
+    const b = Buffer.alloc(8);
+    b.writeBigUInt64LE(BigInt(bn), 0);
+    return u64.fromBuffer(b);
+}
 
 // Invoice represents a transaction invoice for a single payment.
 //

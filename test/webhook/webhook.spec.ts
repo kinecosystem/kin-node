@@ -1,3 +1,4 @@
+import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Account as SolanaAccount, Transaction as SolanaTransaction } from "@solana/web3.js";
 import base58 from "bs58";
 import express from "express";
@@ -7,7 +8,6 @@ import {
     Environment,
     PrivateKey
 } from "../../src";
-import { TokenProgram } from "../../src/solana/token-program";
 import {
     AGORA_HMAC_HEADER,
     AGORA_USER_ID_HEADER,
@@ -154,7 +154,6 @@ test("signtransactionHandler Kin 4", async () => {
     const sender = PrivateKey.random().publicKey();
     const destination = PrivateKey.random().publicKey();
     const recentBlockhash = PrivateKey.random().publicKey();
-    const tokenProgram = PrivateKey.random().publicKey();
 
     let actualUserId: string | undefined;
     let actualUserPasskey: string | undefined;
@@ -169,13 +168,15 @@ test("signtransactionHandler Kin 4", async () => {
         feePayer: sender.solanaKey(),
         recentBlockhash: recentBlockhash.toBase58(),
     }).add(
-        TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: destination.solanaKey(),
-            owner: sender.solanaKey(),
-            amount: BigInt(100),
-        }, tokenProgram.solanaKey(),
-    ));
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
 
     const req = {
         solana_transaction: transaction.serialize({
@@ -210,7 +211,6 @@ test("signTransactionHandler rejection Kin 4", async () => {
     const sender = PrivateKey.random().publicKey();
     const destination = PrivateKey.random().publicKey();
     const recentBlockhash = PrivateKey.random().publicKey();
-    const tokenProgram = PrivateKey.random().publicKey();
 
     app.use("/sign_transaction", express.json());
     app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: SignTransactionRequest, resp: SignTransactionResponse) => {
@@ -226,13 +226,15 @@ test("signTransactionHandler rejection Kin 4", async () => {
     // There are 10 invoices in the invoice list
     for (let i = 0; i < 10; i++) {
         transaction.add(
-            TokenProgram.transfer({
-                source: sender.solanaKey(),
-                dest: destination.solanaKey(),
-                owner: sender.solanaKey(),
-                amount: BigInt(100),
-            }, tokenProgram.solanaKey(),
-        ));
+            Token.createTransferInstruction(
+                TOKEN_PROGRAM_ID,
+                sender.solanaKey(),
+                destination.solanaKey(),
+                sender.solanaKey(),
+                [],
+                100,
+            )
+        );
     }
 
     const req = {
@@ -271,19 +273,20 @@ test("signTransactionRequest getTxId", async () => {
     const sender = PrivateKey.random().publicKey();
     const destination = PrivateKey.random().publicKey();
     const recentBlockhash = PrivateKey.random().publicKey();
-    const tokenProgram = PrivateKey.random().publicKey();
-
+    
     const transaction = new SolanaTransaction({
         feePayer: sender.solanaKey(),
         recentBlockhash: recentBlockhash.toBase58(),
     }).add(
-        TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: destination.solanaKey(),
-            owner: owner.publicKey().solanaKey(),
-            amount: BigInt(100),
-        }, tokenProgram.solanaKey(),
-    ));
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            owner.publicKey().solanaKey(),
+            [],
+            100,
+        )
+    );
     transaction.sign(new SolanaAccount(owner.secretKey()));
 
     const req = new SignTransactionRequest([], transaction);

@@ -1,4 +1,5 @@
 import txpb from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
+import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import * as solanaweb3 from "@solana/web3.js";
 import BigNumber from "bignumber.js";
 import hash from "hash.js";
@@ -6,7 +7,6 @@ import { xdr } from "stellar-base";
 import { invoiceToProto, kinToQuarks, Memo, PrivateKey, quarksToKin, TransactionState, TransactionType, txDataFromProto, xdrInt64ToBigNumber } from "../src";
 import { createHistoryItem, createInvoiceList } from "../src/proto/utils";
 import { MemoProgram } from "../src/solana/memo-program";
-import { TokenProgram } from "../src/solana/token-program";
 
 test("XdrInt64ToBigNumber", () => {
     const i64 = new xdr.Int64(1145307136, 572653568);
@@ -41,7 +41,6 @@ test("txDataFromProto", () => {
     const account1 = PrivateKey.random();
     const account2 = PrivateKey.random();
     const owner = PrivateKey.random();
-    const tokenProgram = PrivateKey.random().publicKey().solanaKey();
     const recentBlockhash = new solanaweb3.Account().publicKey.toBase58();
     const invoices = [
         {
@@ -72,18 +71,22 @@ test("txDataFromProto", () => {
         recentBlockhash: recentBlockhash,
      }).add(
         MemoProgram.memo({ data: kinMemo.buffer.toString('base64') }),
-        TokenProgram.transfer({
-            source: account1.publicKey().solanaKey(),
-            dest: account2.publicKey().solanaKey(),
-            owner: owner.publicKey().solanaKey(),
-            amount: BigInt(10),
-        }, tokenProgram),
-        TokenProgram.transfer({
-            source: account2.publicKey().solanaKey(),
-            dest: account1.publicKey().solanaKey(),
-            owner: owner.publicKey().solanaKey(),
-            amount: BigInt(15),
-        }, tokenProgram),
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            account1.publicKey().solanaKey(),
+            account2.publicKey().solanaKey(),
+            owner.publicKey().solanaKey(),
+            [],
+            10,
+        ),
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            account2.publicKey().solanaKey(),
+            account1.publicKey().solanaKey(),
+            owner.publicKey().solanaKey(),
+            [],
+            15,
+        )
     );
     tx.setSigners(owner.publicKey().solanaKey());
     owner.kp.secret();
@@ -133,7 +136,6 @@ test("txDataFromProto no invoices", () => {
     const account1 = PrivateKey.random();
     const account2 = PrivateKey.random();
     const owner = PrivateKey.random();
-    const tokenProgram = PrivateKey.random().publicKey().solanaKey();
     const recentBlockhash = new solanaweb3.Account().publicKey.toBase58();
     const kinMemo = Memo.new(1, TransactionType.P2P, 0, Buffer.alloc(0));
     const tx = new solanaweb3.Transaction({ 
@@ -141,18 +143,22 @@ test("txDataFromProto no invoices", () => {
         recentBlockhash: recentBlockhash,
      }).add(
         MemoProgram.memo({ data: kinMemo.buffer.toString('base64') }),
-        TokenProgram.transfer({
-            source: account1.publicKey().solanaKey(),
-            dest: account2.publicKey().solanaKey(),
-            owner: owner.publicKey().solanaKey(),
-            amount: BigInt(10),
-        }, tokenProgram),
-        TokenProgram.transfer({
-            source: account2.publicKey().solanaKey(),
-            dest: account1.publicKey().solanaKey(),
-            owner: owner.publicKey().solanaKey(),
-            amount: BigInt(15),
-        }, tokenProgram),
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            account1.publicKey().solanaKey(),
+            account2.publicKey().solanaKey(),
+            owner.publicKey().solanaKey(),
+            [],
+            10,
+        ),
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            account2.publicKey().solanaKey(),
+            account1.publicKey().solanaKey(),
+            owner.publicKey().solanaKey(),
+            [],
+            15,
+        ),
     );
     tx.setSigners(owner.publicKey().solanaKey());
     owner.kp.secret();
@@ -202,7 +208,6 @@ test("txDataFromProto invoice payment count mismatch", () => {
     const account1 = PrivateKey.random();
     const account2 = PrivateKey.random();
     const owner = PrivateKey.random();
-    const tokenProgram = PrivateKey.random().publicKey().solanaKey();
     const recentBlockhash = new solanaweb3.Account().publicKey.toBase58();
     const invoices = [
         {
@@ -224,18 +229,22 @@ test("txDataFromProto invoice payment count mismatch", () => {
         recentBlockhash: recentBlockhash,
      }).add(
         MemoProgram.memo({ data: kinMemo.buffer.toString('base64') }),
-        TokenProgram.transfer({
-            source: account1.publicKey().solanaKey(),
-            dest: account2.publicKey().solanaKey(),
-            owner: owner.publicKey().solanaKey(),
-            amount: BigInt(10),
-        }, tokenProgram),
-        TokenProgram.transfer({
-            source: account2.publicKey().solanaKey(),
-            dest: account1.publicKey().solanaKey(),
-            owner: owner.publicKey().solanaKey(),
-            amount: BigInt(15),
-        }, tokenProgram),
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            account1.publicKey().solanaKey(),
+            account2.publicKey().solanaKey(),
+            owner.publicKey().solanaKey(),
+            [],
+            10,
+        ),
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            account2.publicKey().solanaKey(),
+            account1.publicKey().solanaKey(),
+            owner.publicKey().solanaKey(),
+            [],
+            15,
+        ),
     );
     tx.setSigners(owner.publicKey().solanaKey());
     owner.kp.secret();

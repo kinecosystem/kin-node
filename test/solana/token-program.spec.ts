@@ -1,34 +1,24 @@
-import { AuthorityType, Command, InitializeAccountParams, SetAuthorityParams, TokenInstruction, TokenProgram, TransferParams } from "../../src/solana/token-program"
-import { PrivateKey } from "../../src/keys"
-
-const tokenProgram = PrivateKey.random().publicKey().solanaKey();
+import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import BigNumber from "bignumber.js";
+import { bigNumberToU64 } from "../../src";
+import { PrivateKey } from "../../src/keys";
+import { InitializeAccountParams, SetAuthorityParams, TokenInstruction, TransferParams } from "../../src/solana/token-program";
 
 test('TestTokenProgram_InitializeAccount', () => {
     const params: InitializeAccountParams = {
         account: PrivateKey.random().publicKey().solanaKey(),
         mint: PrivateKey.random().publicKey().solanaKey(),
         owner: PrivateKey.random().publicKey().solanaKey(),
-    }
-    const instruction = TokenProgram.initializeAccount(params, tokenProgram)
-    expect(instruction.data).toHaveLength(1)
-    expect(instruction.data[0]).toEqual(Command.InitializeAccount)
+    };
+    const instruction = Token.createInitAccountInstruction(
+        TOKEN_PROGRAM_ID,
+        params.mint,
+        params.account,
+        params.owner,
+    );
 
-    expect(instruction.keys).toHaveLength(4)
-    expect(instruction.keys[0].pubkey.toBase58()).toBe(params.account.toBase58())
-    expect(instruction.keys[0].isSigner).toBeTruthy()
-    expect(instruction.keys[0].isWritable).toBeTruthy()
-
-    const expectedKeys = [params.mint, params.owner, TokenProgram.rentSysVar]
-    for (let i = 1; i < 4; i++) {
-        expect(instruction.keys[i].pubkey.toBase58()).toBe(expectedKeys[i-1].toBase58())
-        expect(instruction.keys[i].isSigner).toBeFalsy()
-        expect(instruction.keys[i].isWritable).toBeFalsy()
-    }
-
-    expect(params).toEqual(
-        TokenInstruction.decodeInitializeAccount(instruction, tokenProgram)
-    )
-})
+    expect(params).toEqual(TokenInstruction.decodeInitializeAccount(instruction));
+});
 
 test('TestTokenProgram_Transfer', () => {
     const params: TransferParams = {
@@ -36,74 +26,51 @@ test('TestTokenProgram_Transfer', () => {
         dest: PrivateKey.random().publicKey().solanaKey(),
         owner: PrivateKey.random().publicKey().solanaKey(),
         amount: BigInt(123456789),
-    }
-    const instruction = TokenProgram.transfer(params, tokenProgram)
-    expect(instruction.data).toHaveLength(9)
-    expect(instruction.data[0]).toEqual(Command.Transfer)
+    };
+    const instruction = Token.createTransferInstruction(
+        TOKEN_PROGRAM_ID,
+        params.source,
+        params.dest,
+        params.owner,
+        [],
+        bigNumberToU64(new BigNumber(123456789)),
+    );
 
-    expect(instruction.keys).toHaveLength(3)
-    expect(instruction.keys[0].pubkey.toBase58()).toBe(params.source.toBase58())
-    expect(instruction.keys[0].isSigner).toBeFalsy()
-    expect(instruction.keys[0].isWritable).toBeTruthy()
-    expect(instruction.keys[1].pubkey.toBase58()).toBe(params.dest.toBase58())
-    expect(instruction.keys[1].isSigner).toBeFalsy()
-    expect(instruction.keys[1].isWritable).toBeTruthy()
-    expect(instruction.keys[2].pubkey.toBase58()).toBe(params.owner.toBase58())
-    expect(instruction.keys[2].isSigner).toBeTruthy()
-    expect(instruction.keys[2].isWritable).toBeTruthy()
-
-    expect(params).toEqual(
-        TokenInstruction.decodeTransfer(instruction, tokenProgram)
-    )
-})
+    expect(params).toEqual(TokenInstruction.decodeTransfer(instruction));
+});
 
 
 test('TestTokenProgram_SetAuthority', () => {
     let params: SetAuthorityParams = {
         account: PrivateKey.random().publicKey().solanaKey(),
         currentAuthority: PrivateKey.random().publicKey().solanaKey(),
-        authorityType: AuthorityType.AccountHolder
-    }
-    let instruction = TokenProgram.setAuthority(params, tokenProgram)
-    expect(instruction.data).toHaveLength(3)
-    expect(instruction.data[0]).toEqual(Command.SetAuthority)
-    expect(instruction.data[1]).toEqual(AuthorityType.AccountHolder)
-    expect(instruction.data[2]).toEqual(0)
-
-    expect(instruction.keys).toHaveLength(2)
-    expect(instruction.keys[0].pubkey.toBase58()).toBe(params.account.toBase58())
-    expect(instruction.keys[0].isSigner).toBeFalsy()
-    expect(instruction.keys[0].isWritable).toBeTruthy()
-    expect(instruction.keys[1].pubkey.toBase58()).toBe(params.currentAuthority.toBase58())
-    expect(instruction.keys[1].isSigner).toBeTruthy()
-    expect(instruction.keys[1].isWritable).toBeFalsy()
-
-    expect(params).toEqual(
-        TokenInstruction.decodeSetAuthority(instruction, tokenProgram)
-    )
+        authorityType: 'AccountOwner',
+    };
+    let instruction = Token.createSetAuthorityInstruction(
+        TOKEN_PROGRAM_ID,
+        params.account,
+        null,
+        params.authorityType,
+        params.currentAuthority,
+        []
+    );
+    
+    expect(params).toEqual(TokenInstruction.decodeSetAuthority(instruction));
 
     params = {
         account: PrivateKey.random().publicKey().solanaKey(),
         currentAuthority: PrivateKey.random().publicKey().solanaKey(),
         newAuthority: PrivateKey.random().publicKey().solanaKey(),
-        authorityType: AuthorityType.CloseAccount,
-    }
-    instruction = TokenProgram.setAuthority(params, tokenProgram)
-    expect(instruction.data).toHaveLength(35)
-    expect(instruction.data[0]).toEqual(Command.SetAuthority)
-    expect(instruction.data[1]).toEqual(AuthorityType.CloseAccount)
-    expect(instruction.data[2]).toEqual(1)
-    expect(instruction.data.slice(3)).toEqual(params.newAuthority!.toBuffer())
+        authorityType: 'CloseAccount',
+    };
+    instruction = Token.createSetAuthorityInstruction(
+        TOKEN_PROGRAM_ID,
+        params.account,
+        params.newAuthority!,
+        params.authorityType,
+        params.currentAuthority,
+        [],
+    );
 
-    expect(instruction.keys).toHaveLength(2)
-    expect(instruction.keys[0].pubkey.toBase58()).toBe(params.account.toBase58())
-    expect(instruction.keys[0].isSigner).toBeFalsy()
-    expect(instruction.keys[0].isWritable).toBeTruthy()
-    expect(instruction.keys[1].pubkey.toBase58()).toBe(params.currentAuthority.toBase58())
-    expect(instruction.keys[1].isSigner).toBeTruthy()
-    expect(instruction.keys[1].isWritable).toBeFalsy()
-
-    expect(params).toEqual(
-        TokenInstruction.decodeSetAuthority(instruction, tokenProgram)
-    )
-})
+    expect(params).toEqual(TokenInstruction.decodeSetAuthority(instruction));
+});

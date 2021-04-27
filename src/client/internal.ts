@@ -6,6 +6,7 @@ import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
 import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
+import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
     Account as SolanaAccount,
     PublicKey as SolanaPublicKey,
@@ -26,7 +27,7 @@ import {
 } from "../";
 import { AccountDoesNotExist, AccountExists, AlreadySubmitted, BadNonce, errorsFromSolanaTx, InsufficientBalance, nonRetriableErrors as nonRetriableErrorsList, NoSubsidizerError, PayerRequired, TransactionRejected } from "../errors";
 import { limit, nonRetriableErrors, retryAsync, ShouldRetry } from "../retry";
-import { AccountSize, AuthorityType, TokenProgram } from "../solana/token-program";
+import { AccountSize } from "../solana/token-program";
 import { generateTokenAccount } from "./utils";
 
 
@@ -160,17 +161,20 @@ export class Internal {
                     space: AccountSize,
                     programId: tokenProgram,
                 }),
-                TokenProgram.initializeAccount({
-                    account: tokenAccountKey.publicKey().solanaKey(),
-                    mint: new SolanaPublicKey(Buffer.from(serviceConfigResp.getToken()!.getValue_asU8())),
-                    owner: key.publicKey().solanaKey(),
-                }, tokenProgram),
-                TokenProgram.setAuthority({
-                    account: tokenAccountKey.publicKey().solanaKey(),
-                    currentAuthority: key.publicKey().solanaKey(),
-                    newAuthority: subsidizerKey,
-                    authorityType: AuthorityType.CloseAccount,
-                }, tokenProgram)
+                Token.createInitAccountInstruction(
+                    TOKEN_PROGRAM_ID,
+                    new SolanaPublicKey(Buffer.from(serviceConfigResp.getToken()!.getValue_asU8())),
+                    tokenAccountKey.publicKey().solanaKey(),
+                    key.publicKey().solanaKey(),
+                ),
+                Token.createSetAuthorityInstruction(
+                    TOKEN_PROGRAM_ID,
+                    tokenAccountKey.publicKey().solanaKey(),
+                    subsidizerKey,
+                    "CloseAccount",
+                    key.publicKey().solanaKey(), 
+                    []
+                )                
             );
             transaction.partialSign(new SolanaAccount(key.secretKey()), new SolanaAccount(tokenAccountKey.secretKey()));
             if (subsidizer) {

@@ -264,7 +264,6 @@ test("submitPayment Kin 4", async() => {
 
         expect(tx.instructions).toHaveLength(2);
 
-        const tokenProgramKey = new SolanaPublicKey(tokenProgram);
         const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
         if (p.memo) {
             expect(memoInstruction.data).toEqual(p.memo);
@@ -279,7 +278,7 @@ test("submitPayment Kin 4", async() => {
             expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
         }
         
-        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1], tokenProgramKey);
+        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1]);
         expect(tokenInstruction.source.toBuffer()).toEqual(p.sender.publicKey().buffer);
         expect(tokenInstruction.dest.toBuffer()).toEqual(p.destination.buffer);
         expect(tokenInstruction.owner.toBuffer()).toEqual(p.sender.publicKey().buffer);
@@ -359,13 +358,12 @@ test("submitPayment Kin 4 with no service subsidizer", async() => {
 
     expect(tx.instructions).toHaveLength(2);
     
-    const tokenProgramKey = new SolanaPublicKey(tokenProgram);
     const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
     
     const expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
     expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
     
-    const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1], tokenProgramKey);
+    const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1]);
     
     expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
     expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
@@ -454,13 +452,12 @@ test("submitPayment Kin 4 with preferred account resolution", async() => {
 
         expect(tx.instructions).toHaveLength(2);
         
-        const tokenProgramKey = new SolanaPublicKey(tokenProgram);
         const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
         
         const expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
         expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
         
-        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1], tokenProgramKey);
+        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1]);
         
         if (resolved[i]) {
             expect(tokenInstruction.source.toBuffer()).toEqual(resolvedSender.publicKey().buffer);
@@ -547,7 +544,7 @@ test("submitPayment Kin 4 with exact account resolution", async() => {
     const expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
     expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
     
-    const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1], tokenProgramKey);    
+    const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1]);    
     expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
     expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
     expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
@@ -788,7 +785,6 @@ test("submitEarnBatch Kin 4", async() => {
         expect(tx.signatures[1].publicKey.toBuffer()).toEqual(sender.publicKey().buffer);
         expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
-        const tokenProgramKey = new SolanaPublicKey(tokenProgram);
         const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
         
         if (b.memo) {
@@ -808,7 +804,7 @@ test("submitEarnBatch Kin 4", async() => {
         expect(tx.instructions).toHaveLength(16);  // including memo
 
         for (let i = 0; i < 15; i++) {
-            const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
+            const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);    
             expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
 
             expect(tokenInstruction.dest.toBuffer()).toEqual(b.earns[i].destination.buffer);
@@ -895,7 +891,7 @@ test("submitEarnBatch Kin 4 with no service subsidizer", async() => {
     expect(tx.instructions).toHaveLength(earnCount + 1);
 
     for (let i = 0; i < earnCount; i++) {
-        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
+        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);    
             expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
             expect(tokenInstruction.dest.toBuffer()).toEqual(earns[i].destination.buffer);
             expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
@@ -1000,7 +996,6 @@ test("submitEarnBatch Kin 4 with preferred account resolution", async() => {
         expect(tx.signatures[1].publicKey.toBuffer()).toEqual(sender.publicKey().buffer);
         expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
-        const tokenProgramKey = new SolanaPublicKey(tokenProgram);
         const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
         
         const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
@@ -1009,7 +1004,7 @@ test("submitEarnBatch Kin 4 with preferred account resolution", async() => {
         expect(tx.instructions).toHaveLength(earnCount + 1);
 
         for (let i = 0; i < earnCount; i++) {
-            const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
+            const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);    
             
             if (resolved) {
                 expect(tokenInstruction.source.toBuffer()).toEqual(resolvedSender.publicKey().buffer);
@@ -1094,7 +1089,7 @@ test("submitEarnBatch Kin 4 with exact account resolution", async() => {
     expect(tx.instructions).toHaveLength(earnCount + 1);
 
     for (let i = 0; i < earnCount; i++) {
-        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1], tokenProgramKey);    
+        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);    
         expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
 
         expect(tokenInstruction.dest.toBuffer()).toEqual(earns[i].destination.buffer);

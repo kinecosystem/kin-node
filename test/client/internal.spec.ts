@@ -6,7 +6,8 @@ import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
 import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
-import { PublicKey as SolanaPublicKey, SystemInstruction, Transaction as SolanaTransaction } from "@solana/web3.js";
+import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { SystemInstruction, Transaction as SolanaTransaction } from "@solana/web3.js";
 import { BigNumber } from "bignumber.js";
 import bs58 from "bs58";
 import { promises as fs } from "fs";
@@ -24,14 +25,13 @@ import { InternalClient } from "../../src/client";
 import { KIN_VERSION_HEADER, USER_AGENT, USER_AGENT_HEADER } from "../../src/client/internal";
 import { generateTokenAccount } from "../../src/client/utils";
 import { AccountDoesNotExist, AccountExists, AlreadySubmitted, BadNonce, InsufficientBalance, NoSubsidizerError, PayerRequired, TransactionRejected } from "../../src/errors";
-import { AccountSize, AuthorityType, TokenInstruction, TokenProgram } from "../../src/solana/token-program";
+import { AccountSize, TokenInstruction } from "../../src/solana/token-program";
 
 
 const recentBlockhash = Buffer.alloc(32);
 const minBalanceForRentExemption = 40175902;
 const subsidizer = PrivateKey.random().publicKey().buffer;
 const token = PrivateKey.random().publicKey().buffer;
-const tokenProgram = PrivateKey.random().publicKey().buffer;
 
 function validateHeaders(md: grpc.Metadata): grpc.ServiceError | undefined {
     const mdMap = md.getMap();
@@ -86,7 +86,7 @@ function setGetServiceConfigResp(txClientV4: transactiongrpcv4.TransactionClient
             const tokenAccount = new commonpbv4.SolanaAccountId();
             tokenAccount.setValue(token);
             const tokenProgramAccount = new commonpbv4.SolanaAccountId();
-            tokenProgramAccount.setValue(tokenProgram);
+            tokenProgramAccount.setValue(TOKEN_PROGRAM_ID.toBuffer());
             
             const resp = new transactionpbv4.GetServiceConfigResponse();
             resp.setSubsidizerAccount(subsidizerAccount);
@@ -109,7 +109,7 @@ function setGetServiceConfigRespNoSubsidizer(txClientV4: transactiongrpcv4.Trans
             const tokenAccount = new commonpbv4.SolanaAccountId();
             tokenAccount.setValue(token);
             const tokenProgramAccount = new commonpbv4.SolanaAccountId();
-            tokenProgramAccount.setValue(tokenProgram);
+            tokenProgramAccount.setValue(TOKEN_PROGRAM_ID.toBuffer());
             
             const resp = new transactionpbv4.GetServiceConfigResponse();
             resp.setToken(tokenAccount);
@@ -213,25 +213,24 @@ test('createSolanaAccount', async () => {
                 expect(account.kp.verify(tx.serializeMessage(), tx.signatures[2].signature!)).toBeTruthy();
 
                 expect(tx.instructions).toHaveLength(3);
-                const tokenProgramKey = new SolanaPublicKey(tokenProgram);
                 
                 const createInstruction = SystemInstruction.decodeCreateAccount(tx.instructions[0]);
                 expect(createInstruction.fromPubkey.toBuffer()).toEqual(subsidizer);
                 expect(createInstruction.newAccountPubkey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
-                expect(createInstruction.programId).toEqual(tokenProgramKey);
+                expect(createInstruction.programId).toEqual(TOKEN_PROGRAM_ID);
                 expect(createInstruction.lamports).toEqual(minBalanceForRentExemption);
                 expect(createInstruction.space).toEqual(AccountSize);
 
-                const initInstruction = TokenInstruction.decodeInitializeAccount(tx.instructions[1], tokenProgramKey);
+                const initInstruction = TokenInstruction.decodeInitializeAccount(tx.instructions[1]);
                 expect(initInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(initInstruction.mint.toBuffer()).toEqual(token);
                 expect(initInstruction.owner.toBuffer()).toEqual(account.publicKey().buffer);
 
-                const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[2], tokenProgramKey);
+                const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[2]);
                 expect(setAuthInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(setAuthInstruction.currentAuthority.toBuffer()).toEqual(account.publicKey().buffer);
                 expect(setAuthInstruction.newAuthority!.toBuffer()).toEqual(subsidizer);
-                expect(setAuthInstruction.authorityType).toEqual(AuthorityType.CloseAccount);
+                expect(setAuthInstruction.authorityType).toEqual('CloseAccount');
                 
                 resp.setResult(accountpbv4.CreateAccountResponse.Result.OK);
                 created = true;
@@ -286,25 +285,24 @@ test('createSolanaAccount no service subsidizer', async () => {
                 expect(account.kp.verify(tx.serializeMessage(), tx.signatures[2].signature!)).toBeTruthy();
 
                 expect(tx.instructions).toHaveLength(3);
-                const tokenProgramKey = new SolanaPublicKey(tokenProgram);
                 
                 const createInstruction = SystemInstruction.decodeCreateAccount(tx.instructions[0]);
                 expect(createInstruction.fromPubkey.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
                 expect(createInstruction.newAccountPubkey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
-                expect(createInstruction.programId).toEqual(tokenProgramKey);
+                expect(createInstruction.programId).toEqual(TOKEN_PROGRAM_ID);
                 expect(createInstruction.lamports).toEqual(minBalanceForRentExemption);
                 expect(createInstruction.space).toEqual(AccountSize);
 
-                const initInstruction = TokenInstruction.decodeInitializeAccount(tx.instructions[1], tokenProgramKey);
+                const initInstruction = TokenInstruction.decodeInitializeAccount(tx.instructions[1]);
                 expect(initInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(initInstruction.mint.toBuffer()).toEqual(token);
                 expect(initInstruction.owner.toBuffer()).toEqual(account.publicKey().buffer);
 
-                const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[2], tokenProgramKey);
+                const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[2]);
                 expect(setAuthInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
                 expect(setAuthInstruction.currentAuthority.toBuffer()).toEqual(account.publicKey().buffer);
                 expect(setAuthInstruction.newAuthority!.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
-                expect(setAuthInstruction.authorityType).toEqual(AuthorityType.CloseAccount);
+                expect(setAuthInstruction.authorityType).toEqual('CloseAccount');
                 
                 resp.setResult(accountpbv4.CreateAccountResponse.Result.OK);
                 created = true;
@@ -701,13 +699,15 @@ test('submitSolanaTransaction', async () => {
         feePayer: sender.solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
-        TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: destination.solanaKey(),
-            owner: sender.solanaKey(),
-            amount: BigInt(100),
-        }, new PublicKey(tokenProgram).solanaKey(),
-    ));
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
 
     let invoiceList: commonpb.InvoiceList | undefined = undefined;
 
@@ -795,13 +795,15 @@ test('submitSolanaTransaction already submitted', async () => {
         feePayer: sender.solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
-        TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: destination.solanaKey(),
-            owner: sender.solanaKey(),
-            amount: BigInt(100),
-        }, new PublicKey(tokenProgram).solanaKey(),
-    ));
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
 
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((req: transactionpbv4.SubmitTransactionRequest, md: grpc.Metadata, callback) => {
@@ -864,13 +866,15 @@ test('submitSolanaTransaction failed', async () => {
         feePayer: sender.solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
-        TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: destination.solanaKey(),
-            owner: sender.solanaKey(),
-            amount: BigInt(100),
-        }, new PublicKey(tokenProgram).solanaKey(),
-    ));
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
 
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
@@ -903,13 +907,15 @@ test('submitSolanaTransaction rejected', async () => {
         feePayer: sender.solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
-        TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: destination.solanaKey(),
-            owner: sender.solanaKey(),
-            amount: BigInt(100),
-        }, new PublicKey(tokenProgram).solanaKey(),
-    ));
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
 
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
@@ -940,13 +946,15 @@ test('submitSolanaTransaction payer required', async () => {
         feePayer: sender.solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
-        TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: destination.solanaKey(),
-            owner: sender.solanaKey(),
-            amount: BigInt(100),
-        }, new PublicKey(tokenProgram).solanaKey(),
-    ));
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
 
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
@@ -977,13 +985,15 @@ test('submitSolanaTransaction invoice error', async () => {
         feePayer: sender.solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
-        TokenProgram.transfer({
-            source: sender.solanaKey(),
-            dest: destination.solanaKey(),
-            owner: sender.solanaKey(),
-            amount: BigInt(100),
-        }, new PublicKey(tokenProgram).solanaKey(),
-    ));
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
 
     const invoices = [
         invoiceToProto({
@@ -1055,7 +1065,7 @@ test('getServiceConfig', async () => {
     const resp = await client.getServiceConfig();
     expect(Buffer.from(resp.getSubsidizerAccount()!.getValue_asU8())).toEqual(subsidizer);
     expect(Buffer.from(resp.getToken()!.getValue_asU8())).toEqual(token);
-    expect(Buffer.from(resp.getTokenProgram()!.getValue_asU8())).toEqual(tokenProgram);
+    expect(Buffer.from(resp.getTokenProgram()!.getValue_asU8())).toEqual(TOKEN_PROGRAM_ID.toBuffer());
     
     await client.getServiceConfig();
     
@@ -1247,13 +1257,15 @@ test('internal retry Kin 4', async () => {
         feePayer: PrivateKey.random().publicKey().solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
-        TokenProgram.transfer({
-            source: PrivateKey.random().publicKey().solanaKey(),
-            dest: PrivateKey.random().publicKey().solanaKey(),
-            owner: PrivateKey.random().publicKey().solanaKey(),
-            amount: BigInt(100),
-        }, new PublicKey(tokenProgram).solanaKey(),
-    ));
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            PrivateKey.random().publicKey().solanaKey(),
+            PrivateKey.random().publicKey().solanaKey(),
+            PrivateKey.random().publicKey().solanaKey(),
+            [],
+            100,
+        )    
+    );
     try {
         await client.submitSolanaTransaction(transaction);
         fail();
