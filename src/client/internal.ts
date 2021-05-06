@@ -6,11 +6,11 @@ import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
 import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
-import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
     Account as SolanaAccount,
     PublicKey as SolanaPublicKey,
-    SystemProgram,
+
     Transaction as SolanaTransaction, Transaction
 } from "@solana/web3.js";
 import BigNumber from "bignumber.js";
@@ -18,17 +18,18 @@ import bs58 from "bs58";
 import grpc from "grpc";
 import LRUCache from "lru-cache";
 import {
-    Commitment, commitmentToProto, PrivateKey,
+    Commitment, commitmentToProto, Memo, PrivateKey,
     PublicKey,
     TransactionData,
     TransactionErrors,
     transactionStateFromProto,
+    TransactionType,
     txDataFromProto
 } from "../";
 import { AccountDoesNotExist, AccountExists, AlreadySubmitted, BadNonce, errorsFromSolanaTx, InsufficientBalance, nonRetriableErrors as nonRetriableErrorsList, NoSubsidizerError, PayerRequired, TransactionRejected } from "../errors";
 import { limit, nonRetriableErrors, retryAsync, ShouldRetry } from "../retry";
+import { MemoProgram } from "../solana/memo-program";
 import { AccountSize } from "../solana/token-program";
-import { generateTokenAccount } from "./utils";
 
 
 export const SDK_VERSION = "0.2.3";
@@ -37,6 +38,12 @@ export const KIN_VERSION_HEADER = "kin-version";
 export const DESIRED_KIN_VERSION_HEADER = "desired-kin-version";
 export const USER_AGENT = `KinSDK/${SDK_VERSION} node/${process.version}`;
 const SERVICE_CONFIG_CACHE_KEY = "GetServiceConfig";
+const SIGNATURE_LENGTH = 64;  // Ref: https://github.com/solana-labs/solana-web3.js/blob/5fbdb96bdd9174f0874c450db64acddaa2b004c1/src/transaction.ts#L35
+
+export class SignTransactionResult {
+    TxId?: Buffer;
+    InvoiceErrors?: commonpb.InvoiceError[];
+}
 
 export class SubmitTransactionResult {
     TxId: Buffer;
@@ -55,6 +62,7 @@ export interface InternalClientConfig {
     txClientV4?: transactiongrpcv4.TransactionClient
 
     strategies?: ShouldRetry[]
+    appIndex?: number
 }
 
 // Internal is the low level gRPC client for Agora used by Client.
@@ -68,6 +76,7 @@ export class Internal {
     txClientV4: transactiongrpcv4.TransactionClient;
     strategies: ShouldRetry[];
     metadata: grpc.Metadata;
+    appIndex: number;
     private responseCache: LRUCache<string, string>;
 
     constructor(config: InternalClientConfig) {
@@ -105,6 +114,8 @@ export class Internal {
         this.metadata.set(USER_AGENT_HEADER, USER_AGENT);
         this.metadata.set(KIN_VERSION_HEADER, "4");
 
+        this.appIndex = config.appIndex ? config.appIndex! : 0;
+
         // Currently only caching GetServiceConfig, so limit to 1 entry
         this.responseCache = new LRUCache({
             max: 1,
@@ -128,14 +139,11 @@ export class Internal {
         }, ...this.strategies);
     }
 
-    async createSolanaAccount(key: PrivateKey, commitment: Commitment = Commitment.Single, subsidizer?: PrivateKey): Promise<void> {
-        const tokenAccountKey = generateTokenAccount(key);
-        
+    async createAccount(key: PrivateKey, commitment: Commitment = Commitment.Single, subsidizer?: PrivateKey): Promise<void> {
         const fn = async() => {
-            const [serviceConfigResp, recentBlockhash, minBalance] = await Promise.all([
+            const [serviceConfigResp, recentBlockhash] = await Promise.all([
                 this.getServiceConfig(),
                 this.getRecentBlockhash(),
-                this.getMinimumBalanceForRentExemption()
             ]);
             if (!subsidizer && !serviceConfigResp.getSubsidizerAccount()) {
                 throw new NoSubsidizerError();
@@ -147,36 +155,44 @@ export class Internal {
             } else {
                 subsidizerKey = new SolanaPublicKey(Buffer.from(serviceConfigResp.getSubsidizerAccount()!.getValue_asU8()));
             }
+            const mint = new SolanaPublicKey(Buffer.from(serviceConfigResp.getToken()!.getValue_asU8()));
 
-            const tokenProgram = new SolanaPublicKey(Buffer.from(serviceConfigResp.getTokenProgram()!.getValue_asU8()));
+            const instructions = [];
+            if (this.appIndex > 0) {
+                const kinMemo = Memo.new(1, TransactionType.None, this.appIndex!, Buffer.alloc(29));
+                instructions.push(MemoProgram.memo({data: kinMemo.buffer.toString("base64")}));
+            }
+
+            const assocAddr = await Token.getAssociatedTokenAddress(
+                ASSOCIATED_TOKEN_PROGRAM_ID,
+                TOKEN_PROGRAM_ID,
+                mint,
+                key.publicKey().solanaKey(),
+            );
+            instructions.push(Token.createAssociatedTokenAccountInstruction(
+                ASSOCIATED_TOKEN_PROGRAM_ID,
+                TOKEN_PROGRAM_ID,
+                mint,
+                assocAddr,
+                key.publicKey().solanaKey(),
+                subsidizerKey,
+            ));
+
+            instructions.push(Token.createSetAuthorityInstruction(
+                TOKEN_PROGRAM_ID,
+                assocAddr,
+                subsidizerKey,
+                "CloseAccount",
+                key.publicKey().solanaKey(), 
+                []
+            ));
 
             const transaction = new Transaction({ 
                 feePayer: subsidizerKey,
                 recentBlockhash: recentBlockhash,
-            }).add(
-                SystemProgram.createAccount({
-                    fromPubkey: subsidizerKey,
-                    newAccountPubkey: tokenAccountKey.publicKey().solanaKey(),
-                    lamports: minBalance,
-                    space: AccountSize,
-                    programId: tokenProgram,
-                }),
-                Token.createInitAccountInstruction(
-                    TOKEN_PROGRAM_ID,
-                    new SolanaPublicKey(Buffer.from(serviceConfigResp.getToken()!.getValue_asU8())),
-                    tokenAccountKey.publicKey().solanaKey(),
-                    key.publicKey().solanaKey(),
-                ),
-                Token.createSetAuthorityInstruction(
-                    TOKEN_PROGRAM_ID,
-                    tokenAccountKey.publicKey().solanaKey(),
-                    subsidizerKey,
-                    "CloseAccount",
-                    key.publicKey().solanaKey(), 
-                    []
-                )                
-            );
-            transaction.partialSign(new SolanaAccount(key.secretKey()), new SolanaAccount(tokenAccountKey.secretKey()));
+            }).add(...instructions);
+            
+            transaction.partialSign(new SolanaAccount(key.secretKey()));
             if (subsidizer) {
                 transaction.partialSign(new SolanaAccount(subsidizer.secretKey()));
             }
@@ -224,7 +240,7 @@ export class Internal {
         });
     }
 
-    async getSolanaAccountInfo(account: PublicKey, commitment: Commitment = Commitment.Single): Promise<accountpbv4.AccountInfo> {
+    async getAccountInfo(account: PublicKey, commitment: Commitment = Commitment.Single): Promise<accountpbv4.AccountInfo> {
         const accountId = new commonpbv4.SolanaAccountId();
         accountId.setValue(account.buffer);
 
@@ -251,7 +267,93 @@ export class Internal {
         }, ...this.strategies);
     }
 
-    async submitSolanaTransaction(tx: SolanaTransaction, invoiceList?: commonpb.InvoiceList, commitment: Commitment = Commitment.Single, dedupeId?: Buffer): Promise<SubmitTransactionResult> {
+    async resolveTokenAccounts(publicKey: PublicKey, includeAccountInfo = false): Promise<accountpbv4.AccountInfo[]> {
+        const accountId = new commonpbv4.SolanaAccountId();
+        accountId.setValue(publicKey.buffer);
+
+        const req = new accountpbv4.ResolveTokenAccountsRequest();
+        req.setAccountId(accountId);
+        req.setIncludeAccountInfo(includeAccountInfo);
+
+        return retryAsync(() => {
+            return new Promise<accountpbv4.ResolveTokenAccountsResponse>((resolve, reject) => {
+                this.accountClientV4.resolveTokenAccounts(req, this.metadata, (err, resp) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+
+                    resolve(resp);
+                });
+            });
+        }, ...this.strategies).then(resp => {
+            const tokenAccounts = resp.getTokenAccountsList();
+            const tokenAccountInfos = resp.getTokenAccountInfosList();
+
+            // This is currently in place for backward compat with the server - `tokenAccounts` is deprecated
+            if (tokenAccounts.length > 0 && tokenAccountInfos.length != tokenAccounts.length) {
+                // If we aren't requesting account info, we can interpolate the results ourselves
+                if (!includeAccountInfo) {
+                    resp.setTokenAccountInfosList(tokenAccounts.map(tokenAccount => {
+                        const accountInfo = new accountpbv4.AccountInfo();
+                        accountInfo.setAccountId(tokenAccount);
+                        return accountInfo;
+                    }));
+                } else {
+                    throw new Error("server does not support resolving with account info");
+                }
+            }
+
+            return Promise.resolve(resp.getTokenAccountInfosList());
+        });
+    }
+
+    async signTransaction(tx: SolanaTransaction, invoiceList?: commonpb.InvoiceList): Promise<SignTransactionResult> {
+        const protoTx = new commonpbv4.Transaction();
+        protoTx.setValue(tx.serialize({
+            requireAllSignatures: false,
+            verifySignatures: false,
+        }));
+
+        const req = new transactionpbv4.SignTransactionRequest();
+        req.setTransaction(protoTx);
+        req.setInvoiceList(invoiceList);
+
+        return retryAsync(() => {
+            return new Promise<SignTransactionResult>((resolve, reject) => {
+                this.txClientV4.signTransaction(req, this.metadata, (err, resp) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+
+                    const result = new SignTransactionResult();
+                    
+                    if (resp.getSignature()?.getValue_asU8().length === SIGNATURE_LENGTH) {
+                        result.TxId = Buffer.from(resp.getSignature()!.getValue_asU8());
+                    }
+
+                    switch (resp.getResult()) {
+                        case transactionpbv4.SignTransactionResponse.Result.OK:
+                            break;
+                        case transactionpbv4.SignTransactionResponse.Result.REJECTED:
+                            reject(new TransactionRejected());
+                            break;
+                        case transactionpbv4.SignTransactionResponse.Result.INVOICE_ERROR:
+                            result.InvoiceErrors = resp.getInvoiceErrorsList();
+                            break;
+                        default:
+                            reject("unexpected result from agora: " + resp.getResult());
+                            return;
+                    }
+
+                    resolve(result);
+                });
+            });
+        }, ...this.strategies);
+    }
+
+    async submitTransaction(tx: SolanaTransaction, invoiceList?: commonpb.InvoiceList, commitment: Commitment = Commitment.Single, dedupeId?: Buffer): Promise<SubmitTransactionResult> {
         const protoTx = new commonpbv4.Transaction();
         protoTx.setValue(tx.serialize({
             requireAllSignatures: false,
@@ -277,7 +379,9 @@ export class Internal {
                     }
 
                     const result = new SubmitTransactionResult();
-                    result.TxId = Buffer.from(resp.getSignature()!.getValue()!);
+                    if (resp.getSignature()?.getValue_asU8().length === SIGNATURE_LENGTH) {
+                        result.TxId = Buffer.from(resp.getSignature()!.getValue_asU8());
+                    }
 
                     switch (resp.getResult()) {
                         case transactionpbv4.SubmitTransactionResponse.Result.OK: {
@@ -288,7 +392,7 @@ export class Internal {
                             // in quick succession and we should raise the error to the caller. Otherwise, it's likely that the
                             // transaction completed successfully on a previous attempt that failed due to a transient error.
                             if (attempt == 1) {
-                                reject(new AlreadySubmitted());
+                                reject(new AlreadySubmitted("", result.TxId));
                                 return;
                             }
                             break;
@@ -306,7 +410,7 @@ export class Internal {
                             break;
                         }
                         case transactionpbv4.SubmitTransactionResponse.Result.FAILED: {
-                            result.Errors = errorsFromSolanaTx(tx, resp.getTransactionError()!);
+                            result.Errors = errorsFromSolanaTx(tx, resp.getTransactionError()!, result.TxId);
                             break;
                         }
                         default:
@@ -443,28 +547,5 @@ export class Internal {
                 });
             });
         }, ...this.strategies);
-    }
-
-    async resolveTokenAccounts(publicKey: PublicKey): Promise<PublicKey[]> {
-        const accountId = new commonpbv4.SolanaAccountId();
-        accountId.setValue(publicKey.buffer);
-
-        const req = new accountpbv4.ResolveTokenAccountsRequest();
-        req.setAccountId(accountId);
-
-        return retryAsync(() => {
-            return new Promise<PublicKey[]>((resolve, reject) => {
-                this.accountClientV4.resolveTokenAccounts(req, this.metadata, (err, resp) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
-
-                    resolve(resp.getTokenAccountsList().map((tokenAccount => {
-                        return new PublicKey(Buffer.from(tokenAccount.getValue_asU8()));
-                    })));
-                });
-            });
-        });
     }
 }

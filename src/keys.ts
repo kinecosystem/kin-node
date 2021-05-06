@@ -1,6 +1,6 @@
-import {StrKey, Keypair} from "stellar-base";
-import {PublicKey as SolanaPublicKey} from "@solana/web3.js";
+import { PublicKey as SolanaPublicKey } from "@solana/web3.js";
 import bs58 from 'bs58';
+import { Keypair, StrKey } from "stellar-base";
 
 
 // PublicKey is a blockchain agnostic representation
@@ -8,8 +8,12 @@ import bs58 from 'bs58';
 export class PublicKey {
     buffer: Buffer;
 
-    constructor(b: Buffer) {
-        this.buffer = b;
+    constructor(b: Buffer | Uint8Array) {
+        if (b instanceof Uint8Array) {
+            this.buffer = Buffer.from(b);
+        } else {
+            this.buffer = b;
+        }
     }
 
     static fromString(address: string): PublicKey {
@@ -36,6 +40,10 @@ export class PublicKey {
         }
 
         throw new Error("address is not a base58-encoded public key");
+    }
+
+    static fromSolanaKey(pk: SolanaPublicKey): PublicKey {
+        return this.fromBase58(pk.toBase58());
     }
 
     toBase58(): string {

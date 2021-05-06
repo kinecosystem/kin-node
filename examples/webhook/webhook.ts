@@ -61,8 +61,6 @@ app.use("/sign_transaction", SignTransactionHandler(Environment.Test, (req: Sign
         return;
     }
 
-    // Note: Calling `sign` on a Kin 4 transaction is currently a no-op, but sign functionality for Solana transactions
-    // will be added at a later date.
     resp.sign(whitelistKey);
 }, secret));
 

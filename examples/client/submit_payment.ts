@@ -1,3 +1,4 @@
+import bs58 from "bs58";
 import process from "process";
 import { Environment, Client, PrivateKey, PublicKey, TransactionType, kinToQuarks } from "../../src";
 
@@ -19,26 +20,26 @@ async function run(): Promise<void> {
     });
 
     // Send 1 kin.
-    let txHash = await client.submitPayment({
+    let txId = await client.submitPayment({
         sender: sender,
         destination: dest,
         type: TransactionType.Spend,
         quarks: kinToQuarks("1"),
     });
-    console.log(`tx: ${txHash.toString('hex')}`);
+    console.log(`tx: ${bs58.encode(txId)}`);
 
     // Send 1 kin with a text memo.
-    txHash = await client.submitPayment({
+    txId = await client.submitPayment({
         sender: sender,
         destination: dest,
         type: TransactionType.Spend,
         quarks: kinToQuarks("1"),
         memo: "1-test"
     });
-    console.log(`tx: ${txHash.toString('hex')}`);
+    console.log(`tx: ${bs58.encode(txId)}`);
 
     // Send 1 kin with an invoice
-    txHash = await client.submitPayment({
+    txId = await client.submitPayment({
         sender: sender,
         destination: dest,
         type: TransactionType.Spend,
@@ -54,7 +55,7 @@ async function run(): Promise<void> {
             ],
         },
     });
-    console.log(`tx: ${txHash.toString('hex')}`);
+    console.log(`tx: ${bs58.encode(txId)}`);
 }
 
 run().catch(e => console.log(e));

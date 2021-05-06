@@ -8,6 +8,12 @@
     - Removed `envelope` and `txHash()` from `SignTransactionRequest` 
     - Removed `envelope`, `signedEnvelope`, and `networkPassphrase` from `SignTransactionResponse`
     - Removed `kin_version`, `tx_hash`, and `stellar_event` from `Event.transaction_event`
+- Add sender create support for `Client.submitPayment`
+- Add `mergeTokenAccounts` to `Client`
+- Add create account webhook support
+- Add creation parsing to `SignTransactionRequest`
+- `SignTransactionResponse.sign` now signs Solana transactions
+- Rename `SignTransactionRequest.solanaTransaction` to `SignTransactionRequest.transaction` 
 
 ## [0.4.0](https://github.com/kinecosystem/kin-node/releases/tag/0.4.0)
 - Expose `requestAirdrop` on `Client` for Kin 4

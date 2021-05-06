@@ -1,12 +1,12 @@
 import commonpb, { InvoiceList } from "@kinecosystem/agora-api/node/common/v3/model_pb";
-import { Transaction as SolanaTransaction } from "@solana/web3.js";
+import { Account, Transaction } from "@solana/web3.js";
 import express from "express";
 import { hmac, sha256 } from "hash.js";
 import http from "http";
-import { xdr } from "stellar-base";
 import {
+    Creation,
     Environment,
-    paymentsFromTransaction,
+    parseTransaction,
     PrivateKey,
     ReadOnlyPayment
 } from "..";
@@ -53,32 +53,152 @@ export function EventsHandler(callback: (events: Event[]) => void, secret?: stri
     };
 }
 
-export class SignTransactionRequest {
-    userId?:            string;
-    userPassKey?:       string;
-    payments:           ReadOnlyPayment[];
-    solanaTransaction: SolanaTransaction;
+export class CreateAccountRequest {
+    userId?:      string;
+    userPassKey?: string;
+    creation:     Creation;
+    transaction:  Transaction;
 
     constructor(
-        payments: ReadOnlyPayment[], transaction: SolanaTransaction, userId?: string, userPassKey?: string
+        creation: Creation, transaction: Transaction, userId?: string, userPassKey?: string
     ) {
         this.userId = userId;
         this.userPassKey = userPassKey;
+        this.creation = creation;
+        this.transaction = transaction;
+    }
+}
+
+export class CreateAccountResponse {
+    transaction: Transaction;
+    rejected:    boolean;
+
+    constructor(transaction: Transaction) {
+        this.transaction = transaction;
+        this.rejected = false;
+    }
+
+    isRejected(): boolean {
+        return this.rejected;
+    }
+
+    sign(key: PrivateKey): void {
+        if (this.transaction.signatures[0].publicKey.toBuffer().equals(key.publicKey().buffer)) {
+            this.transaction.partialSign(new Account(key.secretKey()));
+        }
+    }
+
+    reject(): void {
+        this.rejected = true;
+    }
+}
+
+export function CreateAccountHandler(env: Environment, callback: (req: CreateAccountRequest, resp: CreateAccountResponse) => void, secret?: string): express.RequestHandler<any> {
+    return (req: express.Request<any>, resp: express.Response<any>, next: express.NextFunction) => {
+        if (secret) {
+            if (!verifySignature(req.headers, JSON.stringify(req.body), secret)) {
+                resp.sendStatus(401);
+                return;
+            }
+        }
+
+        let createRequest: CreateAccountRequest;
+        let createResponse: CreateAccountResponse;
+
+        try {
+            interface requestBody {
+                solana_transaction: string
+            }
+            
+            const reqBody = <requestBody>req.body;
+
+            let userId: string | undefined;
+            if (req.headers[AGORA_USER_ID_HEADER] && req.headers[AGORA_USER_ID_HEADER]!.length > 0) {
+                userId = <string>req.headers[AGORA_USER_ID_HEADER];
+            }
+
+            let userPassKey: string | undefined;
+            if (req.headers[AGORA_USER_PASSKEY_HEADER] && req.headers[AGORA_USER_PASSKEY_HEADER]!.length > 0) {
+                userPassKey = <string>req.headers[AGORA_USER_PASSKEY_HEADER];
+            }
+
+            if (!reqBody.solana_transaction || typeof reqBody.solana_transaction != "string") {
+                resp.sendStatus(400);
+                return;
+            }
+
+            const txBytes = Buffer.from(reqBody.solana_transaction, "base64");
+            const tx = Transaction.from(txBytes);
+            const [creations, payments] = parseTransaction(tx);
+            if (payments.length !== 0) {
+                resp.sendStatus(400);
+                return;
+            }
+            if (creations.length !== 1) {
+                resp.sendStatus(400);
+                return;
+            }
+
+            createRequest = new CreateAccountRequest(creations[0], tx, userId, userPassKey);
+            createResponse = new CreateAccountResponse(tx);
+        } catch (err) {
+            resp.sendStatus(400);
+            return;
+        }
+
+        try {
+            callback(createRequest, createResponse);
+            if (createResponse.isRejected()) {
+                resp.sendStatus(403);
+                return;
+            }
+            
+            const sig = createResponse.transaction.signature;
+            if (sig && sig != Buffer.alloc(64).fill(0)) {
+                resp.status(200).send({
+                    signature: sig.toString('base64')
+                });
+                return;
+            }
+
+            return resp.sendStatus(200);
+        } catch (err) {
+            console.log(err);
+            resp.sendStatus(500);
+        }
+    };
+}
+
+export class SignTransactionRequest {
+    userId?:      string;
+    userPassKey?: string;
+    creations:    Creation[];
+    payments:     ReadOnlyPayment[];
+    transaction:  Transaction;
+
+    constructor(
+        creations: Creation[], payments: ReadOnlyPayment[], transaction: Transaction, userId?: string, userPassKey?: string
+    ) {
+        this.userId = userId;
+        this.userPassKey = userPassKey;
+        this.creations = creations;
         this.payments = payments;
 
-        this.solanaTransaction = transaction;
+        this.transaction = transaction;
     }
 
     txId(): Buffer | undefined {
-        return this.solanaTransaction.signature;
+        return this.transaction.signature ? this.transaction.signature : undefined;
     }
 }
 
 export class SignTransactionResponse {
+    transaction:  Transaction;
     rejected: boolean;
     invoiceErrors: InvoiceError[];
 
-    constructor() {
+    constructor(transaction: Transaction) {
+        this.transaction = transaction;
         this.rejected = false;
         this.invoiceErrors = [];
     }
@@ -88,7 +208,9 @@ export class SignTransactionResponse {
     }
 
     sign(key: PrivateKey): void {
-        // TODO: add solana transaction signing for subsidization
+        if (this.transaction.signatures[0].publicKey.toBuffer().equals(key.publicKey().buffer)) {
+            this.transaction.partialSign(new Account(key.secretKey()));
+        }
     }
 
     reject(): void {
@@ -178,10 +300,10 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
             }
 
             const txBytes = Buffer.from(reqBody.solana_transaction, "base64");
-            const tx = SolanaTransaction.from(txBytes);
-            const payments = paymentsFromTransaction(tx, invoiceList);
-            signRequest = new SignTransactionRequest(payments, tx, userId, userPassKey);
-            signResponse = new SignTransactionResponse();
+            const tx = Transaction.from(txBytes);
+            const [creations, payments] = parseTransaction(tx, invoiceList);
+            signRequest = new SignTransactionRequest(creations, payments, tx, userId, userPassKey);
+            signResponse = new SignTransactionResponse(tx);
         } catch (err) {
             resp.sendStatus(400);
             return;
@@ -193,9 +315,18 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
                 resp.status(403).send({
                     invoice_errors: signResponse.invoiceErrors,
                 });
-            } else {
-                resp.status(200).send({});
+                return;
             }
+            
+            const sig = signResponse.transaction.signature;
+            if (sig && sig != Buffer.alloc(64).fill(0)) {
+                resp.status(200).send({
+                    signature: sig.toString('base64')
+                });
+                return;
+            }
+
+            return resp.sendStatus(200);
         } catch (err) {
             console.log(err);
             resp.sendStatus(500);

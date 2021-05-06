@@ -1,13 +1,8 @@
 import {
-    Memo,
-    TransactionType,
-    MAX_TRANSACTION_TYPE,
-    paymentsFromEnvelope,
-    PublicKey,
-    kinToQuarks,
+    MAX_TRANSACTION_TYPE, Memo,
+    TransactionType
 } from "../src"
 import { MAX_APP_INDEX } from "../src/memo"
-import { xdr } from "stellar-base"
 
 test('TestMemo_Valid', () => {
     const emptyFK = Buffer.alloc(29)
@@ -109,22 +104,4 @@ test('TestMemo_from', () => {
     expect(Memo.IsValid(unknownTxType, true)).toBeFalsy()
     expect(unknownTxType.TransactionType()).toBe(TransactionType.Unknown)
     expect(unknownTxType.TransactionTypeRaw()).toBe(10)
-})
-
-test("parsePaymentsFromEnvelope hash memo without invoice", () => {
-    const sender = PublicKey.fromString("GDTSI77SLLJHLECPIEGCEHDKD5F7CMHBBTHX4USLGXX3TAMNOGSAKMPZ");
-    const dest = PublicKey.fromString("GDEES6UNDJ7IQEAO25KB23AG4RH3HVIULIC22BZNZ5GQDVUQPIWUOYOM");
-
-    const envelope = xdr.TransactionEnvelope.fromXDR(Buffer.from("AAAAAOckf/Ja0nWQT0EMIhxqH0vxMOEMz35SSzXvuYGNcaQFAAAAyAAlZh8AAAAyAAAAAQAAAAAAAAAAAAAAAF9Gb5wAAAADJUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAEAAAAAyEl6jRp+iBAO11QdbAbkT7PVFFoFrQctz00B1pB6LUcAAAAAAAAAAAAHoSAAAAAAAAAAAQAAAADISXqNGn6IEA7XVB1sBuRPs9UUWgWtBy3PTQHWkHotRwAAAAAAAAAAAAehIAAAAAAAAAABjXGkBQAAAEASe7oPL92OtZ+HqST7q4gk8+5UDq0QjZu5TqxxgvjvD1s2CW8Uu2yKBcWA2oFNbLRtnpmAiruHl2Z1H8jOuQQP", "base64"));
-    const payments = paymentsFromEnvelope(envelope, TransactionType.Spend);
-    expect(payments).toHaveLength(2);
-
-    for (const p of payments) {
-        expect(p.sender).toStrictEqual(sender);
-        expect(p.destination).toStrictEqual(dest);
-        expect(p.quarks).toBe(kinToQuarks("5").toString());
-        expect(p.type).toBe(TransactionType.Spend);
-        expect(p.invoice).toBeUndefined();
-        expect(p.memo).toBeUndefined();
-    }
 })

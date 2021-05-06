@@ -36,7 +36,8 @@ export class MemoProgram {
     static memo(params: MemoParams): TransactionInstruction {
         return new TransactionInstruction({
             programId: this.programId,
-            data: Buffer.from(params.data)
+            data: Buffer.from(params.data),
+            keys: []
         });
     }
 }

@@ -1,17 +1,17 @@
 import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import txpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
-import { u64 } from "@solana/spl-token";
-import { Transaction as SolanaTransaction } from "@solana/web3.js";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, u64 } from "@solana/spl-token";
+import { SystemInstruction, SystemProgram, Transaction as SolanaTransaction } from "@solana/web3.js";
 import BigNumber from "bignumber.js";
+import hash from "hash.js";
 import { xdr } from "stellar-base";
 import { Client } from "./client";
 import { errorsFromSolanaTx, errorsFromStellarTx, TransactionErrors } from "./errors";
 import { PrivateKey, PublicKey } from "./keys";
 import { Memo } from "./memo";
 import { MemoInstruction, MemoProgram } from "./solana/memo-program";
-import { TokenInstruction, TransferParams } from "./solana/token-program";
-
+import { AccountSize as ACCOUNT_SIZE, Command, getTokenCommand, SetAuthorityParams, TokenInstruction } from "./solana/token-program";
 
 export {
     Client,
@@ -152,7 +152,7 @@ export interface Invoice {
     Items: InvoiceItem[]
 }
 
-function protoToInvoice(invoice: commonpb.Invoice): Invoice {
+export function protoToInvoice(invoice: commonpb.Invoice): Invoice {
     const result: Invoice = {
         Items: invoice.getItemsList().map(x => {
             const item: InvoiceItem = {
@@ -220,8 +220,6 @@ export interface Payment {
     // was previously submitted with the same dedupeId. If one is found,
     // it will NOT submit the transaction again, and will return the status 
     // of the previously submitted transaction.
-    // 
-    // Only available on Kin 4.
     dedupeId?: Buffer
 }
 
@@ -238,119 +236,223 @@ export interface ReadOnlyPayment {
     memo?: string
 }
 
-export function paymentsFromEnvelope(envelope: xdr.TransactionEnvelope, type: TransactionType, invoiceList?: commonpb.InvoiceList, kinVersion?: number): ReadOnlyPayment[] {
-    const payments: ReadOnlyPayment[] = [];
-
-    if (!kinVersion) {
-        kinVersion = 3;
-    }
-
-    if (invoiceList && invoiceList.getInvoicesList().length != envelope.v0().tx().operations().length) {
-        throw new Error("provided invoice count does not match op count");
-    }
-
-    envelope.v0().tx().operations().map((op, i) => {
-        // Currently we only support payment operations in this RPC.
-        //
-        // We could potentially expand this to CreateAccount functions,
-        // as well as merge account. However, GetTransaction() is primarily
-        // only used for payments
-        if (op.body().switch() != xdr.OperationType.payment()) {
-            return;
-        }
-
-        if (kinVersion === 2) {
-            const assetName = op.body().paymentOp().asset().switch().name;
-            if (
-                assetName !== "assetTypeCreditAlphanum4" ||
-                !op.body().paymentOp().asset().alphaNum4().assetCode().equals(KinAssetCodeBuffer)
-            ) {
-                // Only Kin payment operations are supported in this RPC.
-                return;
-            }
-        }
-
-        let sender: PublicKey;
-        if (op.sourceAccount()) {
-            sender = new PublicKey(op.sourceAccount()!.ed25519()!);
-        } else {
-            sender = new PublicKey(envelope.v0().tx().sourceAccountEd25519());
-        }
-
-        let quarks: string;
-        if (kinVersion === 2) {
-            // The smallest denomination on Kin 2 is 1e-7, which is smaller than quarks (1e-5) by 1e2. Therefore, when
-            // parsing envelope amounts, we divide by 1e2 to get the amount in quarks.
-            quarks = xdrInt64ToBigNumber(op.body().paymentOp().amount()).dividedBy(1e2).toString();
-        } else {
-            quarks = xdrInt64ToBigNumber(op.body().paymentOp().amount()).toString();
-        }
-        const p: ReadOnlyPayment = {
-            sender: sender,
-            destination: new PublicKey(op.body().paymentOp().destination().ed25519()),
-            quarks: quarks,
-            type: type,
-        };
-
-        if (invoiceList) {
-            p.invoice = protoToInvoice(invoiceList.getInvoicesList()[i]);
-        } else if (envelope.v0().tx().memo().switch() === xdr.MemoType.memoText()) {
-            p.memo = envelope.v0().tx().memo().text().toString();
-        }
-
-        payments.push(p);
-    });
-
-    return payments;
+// Creation represents a Kin token account creation.
+export interface Creation {
+    owner: PublicKey
+    address: PublicKey
 }
 
-export function paymentsFromTransaction(transaction: SolanaTransaction, invoiceList?: commonpb.InvoiceList): ReadOnlyPayment[] {
+export function parseTransaction(tx: SolanaTransaction, invoiceList?: commonpb.InvoiceList): [Creation[], ReadOnlyPayment[]] {
     const payments: ReadOnlyPayment[] = [];
-    let transferStartIndex = 0;
+    const creations: Creation[] = [];
 
-    let agoraMemo: Memo | undefined;
+    let invoiceHash: Buffer | undefined;
+    if (invoiceList) {
+        invoiceHash = Buffer.from(hash.sha224().update(invoiceList.serializeBinary()).digest('hex'), "hex");
+    }
+
     let textMemo: string | undefined;
-    if (transaction.instructions[0].programId.equals(MemoProgram.programId)) {
-        const memoParams = MemoInstruction.decodeMemo(transaction.instructions[0]);
-        transferStartIndex = 1;
+    let agoraMemo: Memo | undefined;
 
-        try {
-            agoraMemo = Memo.fromB64String(memoParams.data, false);
-        } catch (e) {
-            // not a valid agora memo
-            textMemo = memoParams.data;
+    let ilRefCount = 0;
+    let invoiceTransfers = 0;
+    
+    let hasEarn = false;
+    let hasSpend = false;
+    let hasP2P = false;
+
+    let appIndex = 0;
+    let appId: string | undefined;
+    
+    for (let i = 0; i < tx.instructions.length; i++) {
+        if (isMemo(tx, i)) {
+            const decodedMemo = MemoInstruction.decodeMemo(tx.instructions[i]);
+            try {
+                agoraMemo = Memo.fromB64String(decodedMemo.data, false);
+            } catch (error) {
+                textMemo = decodedMemo.data;
+            }
+
+            if (textMemo) {
+                let parsedId: string | undefined;
+                try {
+                    parsedId = appIdFromTextMemo(textMemo);
+                } catch (error) {
+                    continue;
+                }
+
+                if (appId && parsedId != appId) {
+                    throw new Error("multiple app IDs");
+                }
+
+                appId = parsedId;
+                continue;
+            }
+
+            // From this point on we can assume as have an Agora memo
+            const fk = agoraMemo!.ForeignKey();
+            if (invoiceHash && fk.slice(0, 28).equals(invoiceHash) && fk[28] === 0) {
+                ilRefCount++;
+            }
+
+            if (appIndex > 0 && appIndex != agoraMemo!.AppIndex()) {
+                throw new Error("multiple app indexes");
+            }
+
+            appIndex = agoraMemo!.AppIndex();
+            switch (agoraMemo!.TransactionType()) {
+                case TransactionType.Earn:
+                    hasEarn = true;
+                    break;
+                case TransactionType.Spend:
+                    hasSpend = true;
+                    break;
+                case TransactionType.P2P:
+                    hasP2P = true;
+                    break;
+                default:
+            }
+        } else if (isSystem(tx, i)) {
+            const create = SystemInstruction.decodeCreateAccount(tx.instructions[i]);
+            if  (!create.programId.equals(TOKEN_PROGRAM_ID)) {
+                throw new Error("System::CreateAccount must assign owner to the SplToken program");
+            }
+            if (create.space != ACCOUNT_SIZE) {
+                throw new Error("invalid size in System::CreateAccount");
+            }
+
+            i++;
+            if (i === tx.instructions.length) {
+                throw new Error("missing SplToken::InitializeAccount instruction");
+            }
+            
+            const init = TokenInstruction.decodeInitializeAccount(tx.instructions[i]);
+            if (!create.newAccountPubkey.equals(init.account)) {
+                throw new Error("SplToken::InitializeAccount address does not match System::CreateAccount address");
+            }
+
+            i++;
+            if (i === tx.instructions.length) {
+                throw new Error("missing SplToken::SetAuthority(Close) instruction");
+            }
+
+            const closeAuth = TokenInstruction.decodeSetAuthority(tx.instructions[i]);
+            if (closeAuth.authorityType !== 'CloseAccount') {
+                throw new Error("SplToken::SetAuthority must be of type Close following an initialize");
+            }
+            if (!closeAuth.account.equals(init.account)) {
+                throw new Error("SplToken::SetAuthority(Close) authority must be for the created account");
+            }
+            if (!closeAuth.newAuthority?.equals(create.fromPubkey)) {
+                throw new Error("SplToken::SetAuthority has incorrect new authority");
+            }
+
+            // Changing of the account owner is optional
+            i++;
+            if (i === tx.instructions.length) {
+                creations.push({
+                    owner: PublicKey.fromSolanaKey(init.owner), 
+                    address: PublicKey.fromSolanaKey(init.account),
+                });
+                break;
+            }
+            
+            let ownerAuth: SetAuthorityParams;
+            try {
+                 ownerAuth = TokenInstruction.decodeSetAuthority(tx.instructions[i]);
+            } catch (error) {
+                i--;
+                creations.push({
+                    owner: PublicKey.fromSolanaKey(init.owner), 
+                    address: PublicKey.fromSolanaKey(init.account),
+                });
+                continue;
+            }
+
+            if (ownerAuth.authorityType !== 'AccountOwner') { 
+                throw new Error("SplToken::SetAuthority must be of type AccountHolder following a close authority");
+            }
+            if (!ownerAuth.account.equals(init.account)) {
+                throw new Error("SplToken::SetAuthority(AccountHolder) must be for the created account");
+            }
+            
+            creations.push({
+                owner: PublicKey.fromSolanaKey(ownerAuth.newAuthority!),
+                address: PublicKey.fromSolanaKey(init.account),
+            });
+        } else if (isSPLAssoc(tx, i)) {
+            const create = TokenInstruction.decodeCreateAssociatedAccount(tx.instructions[i]);
+            
+            i++;
+            if (i === tx.instructions.length) {
+                throw new Error("missing SplToken::SetAuthority(Close) instruction");
+            }
+
+            const closeAuth = TokenInstruction.decodeSetAuthority(tx.instructions[i]);
+            if (closeAuth.authorityType !== 'CloseAccount') {
+                throw new Error("SplToken::SetAuthority must be of type Close following an assoc creation");
+            }
+            if (!closeAuth.account.equals(create.address)) {
+                throw new Error("SplToken::SetAuthority(Close) authority must be for the created account");
+            }
+            if (!closeAuth.newAuthority?.equals(create.subsidizer)) {
+                throw new Error("SplToken::SetAuthority has incorrect new authority");
+            }
+            creations.push({
+                owner: PublicKey.fromSolanaKey(create.owner),
+                address: PublicKey.fromSolanaKey(create.address),
+            });
+        } else if (isSpl(tx, i)) {
+            const cmd = getTokenCommand(tx.instructions[i]);
+            if (cmd === Command.Transfer) {
+                const transfer = TokenInstruction.decodeTransfer(tx.instructions[i]);
+                if (transfer.owner.equals(tx.feePayer!)) {
+                    throw new Error("cannot transfer from a subsidizer-owned account");
+                }
+
+                let inv: commonpb.Invoice | undefined;
+                if (agoraMemo) {
+                    const fk = agoraMemo.ForeignKey();
+                    if (invoiceHash && fk.slice(0, 28).equals(invoiceHash) && fk[28] === 0) {
+                        // If the number of parsed transfers matching this invoice is >= the number of invoices,
+                        // raise an error
+                        const invoices = invoiceList!.getInvoicesList();
+                        if (invoiceTransfers >= invoices.length) {
+                            throw new Error(`invoice list doesn't have sufficient invoicesi for this transaction (parsed: ${invoiceTransfers}, invoices: ${invoices.length})`);
+                        }
+                        inv = invoices[invoiceTransfers];
+                        invoiceTransfers++;
+                    }
+                }
+
+                payments.push({
+                    sender: PublicKey.fromSolanaKey(transfer.source),
+                    destination: PublicKey.fromSolanaKey(transfer.dest),
+                    type: agoraMemo ? agoraMemo.TransactionType() : TransactionType.Unknown,
+                    quarks: transfer.amount.toString(),
+                    invoice: inv ? protoToInvoice(inv) : undefined,
+                    memo: textMemo ? textMemo : undefined,
+                });
+            } else if (cmd !== Command.CloseAccount) {
+                // Closures are valid, but otherwise the instruction is not supported
+                throw new Error(`unsupported instruction at ${i}`);
+            }
+        } else {
+            throw new Error(`unsupported instruction at ${i}`);
         }
     }
 
-    const transferCount = transaction.instructions.length - transferStartIndex;
-    if (invoiceList && invoiceList?.getInvoicesList().length !== transferCount) {
-        throw new Error("number of invoices does not match number of payments");
+    if (hasEarn && (hasSpend || hasP2P)) {
+        throw new Error("cannot mix earns with P2P/spends");
+    }
+    if (invoiceList && ilRefCount != 1) {
+        throw new Error(`invoice list does not match exactly to one memo in the transaction (matched: ${ilRefCount})`);
+    }
+    if (invoiceList && invoiceList.getInvoicesList().length != invoiceTransfers) {
+        throw new Error(`invoice count (${invoiceList.getInvoicesList().length}) does not match number of transfers referencing the invoice list ${invoiceTransfers}`);
     }
 
-    transaction.instructions.slice(transferStartIndex).forEach((instruction, i) => {
-        let transferParams : TransferParams;
-        try {
-            transferParams = TokenInstruction.decodeTransfer(instruction);
-        } catch (error) {
-            return;
-        }
-
-        const p : ReadOnlyPayment = {
-            sender: new PublicKey(transferParams.source.toBuffer()),
-            destination: new PublicKey(transferParams.dest.toBuffer()),
-            type: agoraMemo ? agoraMemo.TransactionType() : TransactionType.Unknown,
-            quarks: transferParams.amount.toString(),
-        };
-        if (invoiceList) {
-            p.invoice = protoToInvoice(invoiceList.getInvoicesList()[i]);
-        } else if (textMemo) {
-            p.memo = textMemo;
-        }
-
-        payments.push(p);
-    });
-
-    return payments;
+    return [creations, payments];
 }
 
 // TransactionData contains both metadata and payment data related to
@@ -370,7 +472,7 @@ export class TransactionData {
 
 export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTransactionResponse.State): TransactionData {
     const data = new TransactionData();
-    data.txId = Buffer.from(item.getTransactionId()!.getValue());
+    data.txId = Buffer.from(item.getTransactionId()!.getValue_asU8());
     data.txState = transactionStateFromProto(state);
 
     const invoiceList = item.getInvoiceList();
@@ -418,8 +520,8 @@ export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTrans
     const payments: ReadOnlyPayment[] = [];
     item.getPaymentsList().forEach((payment, i) => {
         const p: ReadOnlyPayment = {
-            sender: new PublicKey(Buffer.from(payment.getSource()!.getValue_asU8())),
-            destination: new PublicKey(Buffer.from(payment.getDestination()!.getValue_asU8())),
+            sender: new PublicKey(payment.getSource()!.getValue_asU8()),
+            destination: new PublicKey(payment.getDestination()!.getValue_asU8()),
             quarks: new BigNumber(payment.getAmount()).toString(),
             type: txType
         };
@@ -483,4 +585,61 @@ export interface EarnError {
     error: Error
     // The index of the earn that caused the
     earnIndex: number
+}
+
+function isMemo(tx: SolanaTransaction, index: number): boolean {
+    return tx.instructions[index].programId.equals(MemoProgram.programId);
+}
+
+function isSpl(tx: SolanaTransaction, index: number): boolean {
+    return tx.instructions[index].programId.equals(TOKEN_PROGRAM_ID);
+}
+
+function isSPLAssoc(tx: SolanaTransaction, index: number): boolean {
+    return tx.instructions[index].programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID);
+}
+
+function isSystem(tx: SolanaTransaction, index: number): boolean {
+    return tx.instructions[index].programId.equals(SystemProgram.programId);
+}
+
+function appIdFromTextMemo(textMemo: string): string {
+    const parts = textMemo.split('-');
+    if (parts.length < 2) {
+        throw new Error("no app id in memo");
+    }
+
+    if (parts[0] != "1") {
+        throw new Error("no app id in memo");
+    }
+
+    if (!isValidAppId(parts[1])) {
+        throw new Error("no valid app id in memo");
+    }
+
+    return parts[1];
+}
+
+function isValidAppId(appId: string): boolean {
+    if (appId.length < 3 || appId.length > 4) {
+        return false;
+    }
+    
+    if (!isAlphaNumeric(appId)) {
+        return false;
+    }
+
+    return true;
+}
+
+function isAlphaNumeric(s: string): boolean {
+    for (let i = 0; i < s.length; i++) {
+        const code = s.charCodeAt(i);
+        if (!(code > 47 && code < 58) && // numeric (0-9)
+        !(code > 64 && code < 91) && // upper alpha (A-Z)
+        !(code > 96 && code < 123)) { // lower alpha (a-z)
+            return false;
+        }
+    }
+    return true;
 }

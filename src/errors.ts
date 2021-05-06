@@ -1,7 +1,7 @@
-import { xdr } from "stellar-base";
-import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
+import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import { Transaction } from "@solana/web3.js";
+import { xdr } from "stellar-base";
 import { TokenInstruction } from "./solana/token-program";
 
 // TransactionErrors contains the error details for a transaction.
@@ -19,9 +19,9 @@ export class TransactionErrors {
     PaymentErrors?: Error[];
 }
 
-export function errorsFromSolanaTx(tx: Transaction, protoError: commonpbv4.TransactionError): TransactionErrors {
+export function errorsFromSolanaTx(tx: Transaction, protoError: commonpbv4.TransactionError, txId?: Buffer): TransactionErrors {
     const errors = new TransactionErrors();
-    const err = errorFromProto(protoError);
+    const err = errorFromProto(protoError, txId);
     if (!err) {
         return errors;
     }
@@ -90,18 +90,18 @@ export function errorsFromStellarTx(env: xdr.TransactionEnvelope, protoError: co
     return errors;
 }
 
-export function errorFromProto(protoError: commonpbv4.TransactionError): Error | undefined {
+export function errorFromProto(protoError: commonpbv4.TransactionError, txId?: Buffer): Error | undefined {
     switch (protoError.getReason()) {
         case commonpbv4.TransactionError.Reason.NONE:
             return undefined;
         case commonpbv4.TransactionError.Reason.UNAUTHORIZED:
-            return new InvalidSignature();
+            return new InvalidSignature("", txId);
         case  commonpbv4.TransactionError.Reason.BAD_NONCE:
-            return new BadNonce();
+            return new BadNonce("", txId);
         case commonpbv4.TransactionError.Reason.INSUFFICIENT_FUNDS:
-            return new InsufficientBalance();
+            return new InsufficientBalance("", txId);
         case commonpbv4.TransactionError.Reason.INVALID_ACCOUNT:
-            return new AccountDoesNotExist();
+            return new AccountDoesNotExist("", txId);
         default:
             return Error("unknown error reason: " + protoError.getReason());
     }
@@ -222,6 +222,15 @@ export function errorsFromXdr(result: xdr.TransactionResult): TransactionErrors 
     return errors;
 }
 
+export class TransactionError extends Error {
+    txId?: Buffer;
+
+    constructor(m?: string, txId?: Buffer) {
+        super(m);
+        this.txId = txId;
+    }
+}
+
 export class TransactionFailed extends Error {
     constructor(m?: string) {
         super(m);
@@ -236,9 +245,9 @@ export class AccountExists extends Error {
         Object.setPrototypeOf(this, AccountExists.prototype);
     }
 }
-export class AccountDoesNotExist extends Error {
-    constructor(m?: string) {
-        super(m);
+export class AccountDoesNotExist extends TransactionError {
+    constructor(m?: string, txId?: Buffer) {
+        super(m, txId);
         this.name = "AccountDoesNotExist";
         Object.setPrototypeOf(this, AccountDoesNotExist.prototype);
     }
@@ -258,16 +267,16 @@ export class Malformed extends Error {
         Object.setPrototypeOf(this, Malformed.prototype);
     }
 }
-export class BadNonce extends Error {
-    constructor(m?: string) {
-        super(m);
+export class BadNonce extends TransactionError {
+    constructor(m?: string, txId?: Buffer) {
+        super(m, txId);
         this.name = "BadNonce";
         Object.setPrototypeOf(this, BadNonce.prototype);
     }
 }
-export class InsufficientBalance extends Error {
-    constructor(m?: string) {
-        super(m);
+export class InsufficientBalance extends TransactionError {
+    constructor(m?: string, txId?: Buffer) {
+        super(m, txId);
         this.name = "InsufficientBalance";
         Object.setPrototypeOf(this, InsufficientBalance.prototype);
     }
@@ -293,9 +302,9 @@ export class DestinationDoesNotExist extends Error {
         Object.setPrototypeOf(this, DestinationDoesNotExist.prototype);
     }
 }
-export class InvalidSignature extends Error {
-    constructor(m?: string) {
-        super(m);
+export class InvalidSignature extends TransactionError {
+    constructor(m?: string, txId?: Buffer) {
+        super(m, txId);
         this.name = "InvalidSignature";
         Object.setPrototypeOf(this, InvalidSignature.prototype);
     }
@@ -347,9 +356,9 @@ export class NoSubsidizerError extends Error {
     }
 }
 
-export class AlreadySubmitted extends Error {
-    constructor(m?: string) {
-        super(m);
+export class AlreadySubmitted extends TransactionError {
+    constructor(m?: string, txId?: Buffer) {
+        super(m, txId);
         this.name = "AlreadySubmittedError";
         Object.setPrototypeOf(this, AlreadySubmitted.prototype);
     }

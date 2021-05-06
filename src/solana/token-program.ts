@@ -1,5 +1,5 @@
-import { AuthorityType, TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import { AccountMeta, PublicKey as SolanaPublicKey, TransactionInstruction } from '@solana/web3.js';
+import { ASSOCIATED_TOKEN_PROGRAM_ID, AuthorityType, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { AccountMeta, PublicKey as SolanaPublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, TransactionInstruction } from '@solana/web3.js';
 
 // Reference: https://github.com/solana-labs/solana-program-library/blob/11b1e3eefdd4e523768d63f7c70a7aa391ea0d02/token/program/src/state.rs#L125
 export const AccountSize = 165;
@@ -42,6 +42,19 @@ export interface SetAuthorityParams {
     currentAuthority: SolanaPublicKey,
     newAuthority?: SolanaPublicKey,
     authorityType: AuthorityType,
+}
+
+export interface CreateAssociatedAccountParams {
+    subsidizer: SolanaPublicKey
+    address: SolanaPublicKey
+    owner: SolanaPublicKey
+    mint: SolanaPublicKey
+}
+
+export interface CloseAccountParams {
+    account: SolanaPublicKey
+    destination: SolanaPublicKey
+    owner: SolanaPublicKey
 }
 
 // Use array index to map to the spl-token AuthorityType
@@ -116,6 +129,47 @@ export class TokenInstruction {
             newAuthority: instruction.data[2] == 1 ? new SolanaPublicKey(instruction.data.slice(3)) : undefined
         };
     }
+    
+    static decodeCreateAssociatedAccount(instruction: TransactionInstruction): CreateAssociatedAccountParams {
+        this.checkProgramId(instruction.programId, ASSOCIATED_TOKEN_PROGRAM_ID);
+        this.checkKeyLength(instruction.keys, 7);
+        
+        if (instruction.data.length !== 0) {
+            throw new Error(`invalid instruction data size: ${instruction.data.length}`);
+        }
+        if (!instruction.keys[4].pubkey.equals(SystemProgram.programId)) {
+            throw new Error('system program key mismatch');
+        }
+        if (!instruction.keys[5].pubkey.equals(TOKEN_PROGRAM_ID)) {
+            throw new Error('token progrma key mismatch');
+        }
+        if (!instruction.keys[6].pubkey.equals(SYSVAR_RENT_PUBKEY)) {
+            throw new Error('rent sys var mismatch');
+        }
+
+        return {
+            subsidizer: instruction.keys[0].pubkey,
+            address: instruction.keys[1].pubkey,
+            owner: instruction.keys[2].pubkey,
+            mint: instruction.keys[3].pubkey,
+        };
+    }
+
+    static decodeCloseAccount(instruction: TransactionInstruction): CloseAccountParams {
+        this.checkProgramId(instruction.programId, TOKEN_PROGRAM_ID);
+        this.checkData(instruction.data, 1, Command.CloseAccount);
+        
+        // note: we do < 3 instead of != 3 in order to support multisig cases
+        if (instruction.keys.length < 3) {
+            throw new Error(`invalid number of accounts: ${instruction.keys.length}`);
+        }
+
+        return {
+            account: instruction.keys[0].pubkey,
+            destination: instruction.keys[1].pubkey,
+            owner: instruction.keys[2].pubkey,
+        };
+    }
 
     private static checkProgramId(programId: SolanaPublicKey, expectedProgramId: SolanaPublicKey) {
         if (!programId.equals(expectedProgramId)) {
@@ -143,4 +197,15 @@ export class TokenInstruction {
             throw new Error(`invalid instruction data: ${data}`);
         }
     }
+}
+
+export function getTokenCommand(instruction: TransactionInstruction): Command {
+    if (!instruction.programId.equals(TOKEN_PROGRAM_ID)) {
+        throw new Error('incorrect program');
+    }
+    if (instruction.data.length === 0) {
+        throw new Error('token instruction missing data');
+    }
+
+    return instruction.data[0];
 }

@@ -1,7 +1,7 @@
 defaults: &defaults
   working_directory: ~/repo
   docker:
-    - image: circleci/node:dubnium # codename for 10.x
+    - image: circleci/node:erbium # codename for 12.x
 
 whitelist: &whitelist
   paths:

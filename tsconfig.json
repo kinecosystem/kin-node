@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2015",
+    "skipLibCheck": true,
     "module": "commonjs",
     "declaration": true,
     "rootDir": "src/",

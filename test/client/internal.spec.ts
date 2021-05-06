@@ -6,8 +6,8 @@ import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
 import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
 import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
-import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { SystemInstruction, Transaction as SolanaTransaction } from "@solana/web3.js";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Account as SolanaAccount, Transaction as SolanaTransaction } from "@solana/web3.js";
 import { BigNumber } from "bignumber.js";
 import bs58 from "bs58";
 import { promises as fs } from "fs";
@@ -23,9 +23,8 @@ import {
 } from "../../src";
 import { InternalClient } from "../../src/client";
 import { KIN_VERSION_HEADER, USER_AGENT, USER_AGENT_HEADER } from "../../src/client/internal";
-import { generateTokenAccount } from "../../src/client/utils";
 import { AccountDoesNotExist, AccountExists, AlreadySubmitted, BadNonce, InsufficientBalance, NoSubsidizerError, PayerRequired, TransactionRejected } from "../../src/errors";
-import { AccountSize, TokenInstruction } from "../../src/solana/token-program";
+import { TokenInstruction } from "../../src/solana/token-program";
 
 
 const recentBlockhash = Buffer.alloc(32);
@@ -61,7 +60,7 @@ interface TestEnv {
     txClientV4: transactiongrpcv4.TransactionClient
 }
 
-function newTestEnv(): TestEnv {
+function newTestEnv(appIndex?: number): TestEnv {
     const accountClientV4 = mock(accountgrpcv4.AccountClient);
     const airdropClientV4 = mock(airdropgrpcv4.AirdropClient);
     const txClientV4 = mock(transactiongrpcv4.TransactionClient);
@@ -71,6 +70,7 @@ function newTestEnv(): TestEnv {
             accountClientV4: instance(accountClientV4),
             airdropClientV4: instance(airdropClientV4),
             txClientV4: instance(txClientV4),
+            appIndex: appIndex,
         }),
         'accountClientV4': accountClientV4,
         'airdropClientV4': airdropClientV4,
@@ -177,17 +177,16 @@ test('getBlockchainVersion', async () => {
     expect(await client.getBlockchainVersion()).toBe(4);
 });
 
-test('createSolanaAccount', async () => {
+test('createAccount', async () => {
     const account = PrivateKey.random();
-    const tokenAccount = generateTokenAccount(account);
+    const tokenAccount = await Token.getAssociatedTokenAddress(ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, new PublicKey(token).solanaKey(), account.publicKey().solanaKey());
 
     const env = newTestEnv();
     const [client, accountClientV4, txClientV4] = [env.client, env.accountClientV4, env.txClientV4];
 
     setGetServiceConfigResp(txClientV4);
     setGetRecentBlockhashResp(txClientV4);
-    setGetMinBalanceResp(txClientV4);
-
+    
     let created = false;
     when(accountClientV4.createAccount(anything(), anything(), anything()))
         .thenCall((req: accountpbv4.CreateAccountRequest, md: grpc.Metadata, callback) => {
@@ -202,32 +201,23 @@ test('createSolanaAccount', async () => {
                 resp.setResult(accountpbv4.CreateAccountResponse.Result.EXISTS);
             } else {
                 const tx = SolanaTransaction.from(req.getTransaction()!.getValue_asU8());
-                expect(tx.signatures).toHaveLength(3);
+                expect(tx.signatures).toHaveLength(2);
                 expect(tx.signatures[0].publicKey.toBuffer()).toEqual(subsidizer);
                 expect(tx.signatures[0].signature).toBeNull();
 
-                expect(tx.signatures[1].publicKey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
-                expect(tokenAccount.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
+                expect(tx.signatures[1].publicKey.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(account.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
+
+                expect(tx.instructions).toHaveLength(2);
+
+                const createAssocInstruction = TokenInstruction.decodeCreateAssociatedAccount(tx.instructions[0]);
+                expect(createAssocInstruction.subsidizer.toBuffer()).toEqual(subsidizer);
+                expect(createAssocInstruction.address).toEqual(tokenAccount);
+                expect(createAssocInstruction.owner.toBuffer()).toEqual(account.publicKey().buffer);
+                expect(createAssocInstruction.mint.toBuffer()).toEqual(token);
                 
-                expect(tx.signatures[2].publicKey.toBuffer()).toEqual(account.publicKey().buffer);
-                expect(account.kp.verify(tx.serializeMessage(), tx.signatures[2].signature!)).toBeTruthy();
-
-                expect(tx.instructions).toHaveLength(3);
-                
-                const createInstruction = SystemInstruction.decodeCreateAccount(tx.instructions[0]);
-                expect(createInstruction.fromPubkey.toBuffer()).toEqual(subsidizer);
-                expect(createInstruction.newAccountPubkey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
-                expect(createInstruction.programId).toEqual(TOKEN_PROGRAM_ID);
-                expect(createInstruction.lamports).toEqual(minBalanceForRentExemption);
-                expect(createInstruction.space).toEqual(AccountSize);
-
-                const initInstruction = TokenInstruction.decodeInitializeAccount(tx.instructions[1]);
-                expect(initInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
-                expect(initInstruction.mint.toBuffer()).toEqual(token);
-                expect(initInstruction.owner.toBuffer()).toEqual(account.publicKey().buffer);
-
-                const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[2]);
-                expect(setAuthInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
+                const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[1]);
+                expect(setAuthInstruction.account).toEqual(tokenAccount);
                 expect(setAuthInstruction.currentAuthority.toBuffer()).toEqual(account.publicKey().buffer);
                 expect(setAuthInstruction.newAuthority!.toBuffer()).toEqual(subsidizer);
                 expect(setAuthInstruction.authorityType).toEqual('CloseAccount');
@@ -238,19 +228,19 @@ test('createSolanaAccount', async () => {
             callback(undefined, resp);
         });
 
-    await client.createSolanaAccount(account);
+    await client.createAccount(account);
     expect(created).toBeTruthy();
 
     try {
-        await client.createSolanaAccount(account);
+        await client.createAccount(account);
         fail();
     } catch (err) {
         expect(err).toBeInstanceOf(AccountExists);
     }
 });
-test('createSolanaAccount no service subsidizer', async () => {
+test('createAccount no service subsidizer', async () => {
     const account = PrivateKey.random();
-    const tokenAccount = generateTokenAccount(account);
+    const tokenAccount = await Token.getAssociatedTokenAddress(ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, new PublicKey(token).solanaKey(), account.publicKey().solanaKey());
     
     const appSubsidizer = PrivateKey.random();
     const env = newTestEnv();
@@ -258,9 +248,7 @@ test('createSolanaAccount no service subsidizer', async () => {
 
     setGetServiceConfigRespNoSubsidizer(txClientV4);
     setGetRecentBlockhashResp(txClientV4);
-    setGetMinBalanceResp(txClientV4);
 
-    let created = false;
     when(accountClientV4.createAccount(anything(), anything(), anything()))
         .thenCall((req: accountpbv4.CreateAccountRequest, md: grpc.Metadata, callback) => {
             const err = validateHeaders(md);
@@ -270,57 +258,46 @@ test('createSolanaAccount no service subsidizer', async () => {
             }
 
             const resp = new accountpbv4.CreateAccountResponse();
-            if (created) {
-                resp.setResult(accountpbv4.CreateAccountResponse.Result.EXISTS);
-            } else {
-                const tx = SolanaTransaction.from(req.getTransaction()!.getValue_asU8());
-                expect(tx.signatures).toHaveLength(3);
-                expect(tx.signatures[0].publicKey.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
-                expect(appSubsidizer.kp.verify(tx.serializeMessage(), tx.signatures[0].signature!)).toBeTruthy();
+            
+            // This should only be reached if an app subsidizer was passed in
+            const tx = SolanaTransaction.from(req.getTransaction()!.getValue_asU8());
+            expect(tx.signatures).toHaveLength(2);
+            expect(tx.signatures[0].publicKey.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
+            expect(appSubsidizer.kp.verify(tx.serializeMessage(), tx.signatures[0].signature!)).toBeTruthy();
 
-                expect(tx.signatures[1].publicKey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
-                expect(tokenAccount.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
+            expect(tx.signatures[1].publicKey.toBuffer()).toEqual(account.publicKey().buffer);
+            expect(account.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
-                expect(tx.signatures[2].publicKey.toBuffer()).toEqual(account.publicKey().buffer);
-                expect(account.kp.verify(tx.serializeMessage(), tx.signatures[2].signature!)).toBeTruthy();
+            expect(tx.instructions).toHaveLength(2);
 
-                expect(tx.instructions).toHaveLength(3);
-                
-                const createInstruction = SystemInstruction.decodeCreateAccount(tx.instructions[0]);
-                expect(createInstruction.fromPubkey.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
-                expect(createInstruction.newAccountPubkey.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
-                expect(createInstruction.programId).toEqual(TOKEN_PROGRAM_ID);
-                expect(createInstruction.lamports).toEqual(minBalanceForRentExemption);
-                expect(createInstruction.space).toEqual(AccountSize);
-
-                const initInstruction = TokenInstruction.decodeInitializeAccount(tx.instructions[1]);
-                expect(initInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
-                expect(initInstruction.mint.toBuffer()).toEqual(token);
-                expect(initInstruction.owner.toBuffer()).toEqual(account.publicKey().buffer);
-
-                const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[2]);
-                expect(setAuthInstruction.account.toBuffer()).toEqual(tokenAccount.publicKey().buffer);
-                expect(setAuthInstruction.currentAuthority.toBuffer()).toEqual(account.publicKey().buffer);
-                expect(setAuthInstruction.newAuthority!.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
-                expect(setAuthInstruction.authorityType).toEqual('CloseAccount');
-                
-                resp.setResult(accountpbv4.CreateAccountResponse.Result.OK);
-                created = true;
-            }
+            const createAssocInstruction = TokenInstruction.decodeCreateAssociatedAccount(tx.instructions[0]);
+            expect(createAssocInstruction.subsidizer.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
+            expect(createAssocInstruction.address).toEqual(tokenAccount);
+            expect(createAssocInstruction.owner.toBuffer()).toEqual(account.publicKey().buffer);
+            expect(createAssocInstruction.mint.toBuffer()).toEqual(token);
+            
+            const setAuthInstruction = TokenInstruction.decodeSetAuthority(tx.instructions[1]);
+            expect(setAuthInstruction.account).toEqual(tokenAccount);
+            expect(setAuthInstruction.currentAuthority.toBuffer()).toEqual(account.publicKey().buffer);
+            expect(setAuthInstruction.newAuthority!.toBuffer()).toEqual(appSubsidizer.publicKey().buffer);
+            expect(setAuthInstruction.authorityType).toEqual('CloseAccount');
+            
+            resp.setResult(accountpbv4.CreateAccountResponse.Result.OK);
             callback(undefined, resp);
         });
 
+    // Don't pass in subsidizer
     try {
-        await client.createSolanaAccount(account);
+        await client.createAccount(account);
         fail();
     } catch (err) {
         expect(err).toBeInstanceOf(NoSubsidizerError);
     }
 
-    await client.createSolanaAccount(account, undefined, appSubsidizer);
-    expect(created).toBeTruthy();
+    // Pass in subsidizer
+    await client.createAccount(account, undefined, appSubsidizer);
 });
-test('createSolanaAccount errors', async () => {
+test('createAccount errors', async () => {
     const testCases = [
         {
             result: accountpbv4.CreateAccountResponse.Result.EXISTS,
@@ -342,7 +319,6 @@ test('createSolanaAccount errors', async () => {
 
     setGetServiceConfigResp(txClientV4);
     setGetRecentBlockhashResp(txClientV4);
-    setGetMinBalanceResp(txClientV4);
 
     let currentCase = 0;
     when(accountClientV4.createAccount(anything(), anything(), anything()))
@@ -363,7 +339,7 @@ test('createSolanaAccount errors', async () => {
         const tc = testCases[i];
     
         try {
-            await client.createSolanaAccount(account);
+            await client.createAccount(account);
             fail();
         } catch (err) {
             expect(err).toBeInstanceOf(tc.error);
@@ -371,7 +347,7 @@ test('createSolanaAccount errors', async () => {
     }
 });
 
-test('getSolanaAccountInfo', async() => {
+test('getAccountInfo', async() => {
     const account1 = PrivateKey.random().publicKey();
     const account2 = PrivateKey.random().publicKey();
     const env = newTestEnv();
@@ -402,16 +378,122 @@ test('getSolanaAccountInfo', async() => {
             callback(undefined, resp);
         });
 
-    const info = await client.getSolanaAccountInfo(account1);
-    expect(info.getAccountId()!.getValue()).toEqual(account1.buffer);
+    const info = await client.getAccountInfo(account1);
+    expect(info.getAccountId()!.getValue_asU8()).toEqual(account1.buffer);
     expect(info.getBalance()).toEqual("100");
 
     try {
-        await client.getSolanaAccountInfo(account2);
+        await client.getAccountInfo(account2);
         fail();
     } catch (err) {
         expect(err).toBeInstanceOf(AccountDoesNotExist);
     }
+});
+
+test('resolveTokenAccounts', async() => {
+    const env = newTestEnv();
+    const [client, accountClientV4] = [env.client, env.accountClientV4];
+    
+    const tokenAccounts = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
+
+    const [account, subsidizer] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
+    const ownerAccountId = new commonpbv4.SolanaAccountId();
+    ownerAccountId.setValue(account.buffer);
+    const subsidizerId = new commonpbv4.SolanaAccountId();
+    subsidizerId.setValue(subsidizer.buffer);
+    
+    let requestedNoInfo = false;
+    let requestedWithInfo = false;
+
+    // On first request of each type, do not include account info.
+    when (accountClientV4.resolveTokenAccounts(anything(), anything(), anything()))
+        .thenCall((req: accountpbv4.ResolveTokenAccountsRequest, md: grpc.Metadata, callback) => {
+            const err = validateHeaders(md);
+            if (err != undefined) {
+                callback(err, undefined);
+                return;
+            }
+
+            const resp = new accountpbv4.ResolveTokenAccountsResponse();
+            if (Buffer.from(req.getAccountId()!.getValue_asU8()).equals(account.buffer)) {
+                const ids: commonpbv4.SolanaAccountId[] = [];
+                tokenAccounts.forEach(tokenAccount => {
+                    const accountId = new commonpbv4.SolanaAccountId();
+                    accountId.setValue(tokenAccount.buffer);
+                    ids.push(accountId);
+                });
+                resp.setTokenAccountsList(ids);
+
+                let setAccountInfos = false;
+                if (req.getIncludeAccountInfo()) {
+                    if (requestedWithInfo) {
+                        setAccountInfos = true;
+                    }
+
+                    requestedWithInfo = true;
+                } else {
+                    if (requestedNoInfo) {
+                        setAccountInfos = true;
+                    }
+                    requestedNoInfo = true;
+                }
+
+                if (setAccountInfos) {
+                    const infos: accountpbv4.AccountInfo[] = [];
+                    tokenAccounts.forEach((_, i) => {
+                        const accountInfo = new accountpbv4.AccountInfo();
+                        accountInfo.setAccountId(resp.getTokenAccountsList()[i]);
+                        if (req.getIncludeAccountInfo()) {
+                            accountInfo.setBalance("10");
+                            accountInfo.setOwner(ownerAccountId);
+                            accountInfo.setCloseAuthority(subsidizerId);
+                        }
+                        infos.push(accountInfo);
+                    });
+                    resp.setTokenAccountInfosList(infos);
+                }
+            }
+            callback(undefined, resp);
+        });
+
+    // Account info not requested, only IDs available
+    let accountInfos = await client.resolveTokenAccounts(account);
+    expect(accountInfos.length).toEqual(tokenAccounts.length);
+    for (let i = 0; i < tokenAccounts.length; i++) {
+        expect(accountInfos[i].getAccountId()!.getValue_asU8()).toEqual(tokenAccounts[i].buffer);
+        expect(accountInfos[i].getBalance()).toEqual("0");
+        expect(accountInfos[i].getOwner()).toBeUndefined();
+        expect(accountInfos[i].getCloseAuthority()).toBeUndefined();
+    }
+
+    // Account info not requested, info available
+    accountInfos = await client.resolveTokenAccounts(account);
+    expect(accountInfos.length).toEqual(tokenAccounts.length);
+    for (let i = 0; i < tokenAccounts.length; i++) {
+        expect(accountInfos[i].getAccountId()!.getValue_asU8()).toEqual(tokenAccounts[i].buffer);
+        expect(accountInfos[i].getBalance()).toEqual("0");
+        expect(accountInfos[i].getOwner()).toBeUndefined();
+        expect(accountInfos[i].getCloseAuthority()).toBeUndefined();
+    }
+
+    // Account info requested, only IDs available
+    try {
+        await client.resolveTokenAccounts(account, true);
+    } catch (error) {
+        expect(error.toString()).toContain("server does not support resolving with account info");
+    }
+    
+    // Account info requested, info available
+    accountInfos = await client.resolveTokenAccounts(account, true);
+    for (let i = 0; i < tokenAccounts.length; i++) {
+        expect(accountInfos[i].getAccountId()!.getValue_asU8()).toEqual(tokenAccounts[i].buffer);
+        expect(accountInfos[i].getBalance()).toEqual("10");
+        expect(accountInfos[i].getOwner()!.getValue()).toEqual(account.buffer);
+        expect(accountInfos[i].getCloseAuthority()!.getValue_asU8()).toEqual(subsidizer.buffer);
+    }
+    
+    // No token accounts
+    expect(await client.resolveTokenAccounts(tokenAccounts[0])).toHaveLength(0);
 });
 
 test('getTransaction Kin 3', async () => {
@@ -689,14 +771,132 @@ test('getTransaction Kin 4 failed', async () => {
     expect(txData!.payments).toHaveLength(0);
 });
 
-test('submitSolanaTransaction', async () => {
+test('signTransaction', async() => {
     const env = newTestEnv();
+    const subsidizer = PrivateKey.random();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
-    const sig = Buffer.from("somesig");
-    const transaction = new SolanaTransaction({ 
-        feePayer: sender.solanaKey(),
+    const tx = new SolanaTransaction({ 
+        feePayer: subsidizer.publicKey().solanaKey(),
+        recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
+    }).add(
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
+    
+    let invoiceList: commonpb.InvoiceList | undefined = undefined;
+    let submitted: transactionpbv4.SignTransactionRequest | undefined;
+    let sig: Buffer | undefined;
+    when(txClientV4.signTransaction(anything(), anything(), anything()))
+        .thenCall((req: transactionpbv4.SignTransactionRequest, md: grpc.Metadata, callback) => {
+            submitted = req;
+            const err = validateHeaders(md);
+            if (err != undefined) {
+                callback(err, undefined);
+                return;
+            }
+
+            // Validate request
+            expect(Buffer.from(req.getTransaction()!.getValue_asU8())).toStrictEqual(tx.serialize({
+                requireAllSignatures: false,
+                verifySignatures: false,
+            }));
+            expect(req.getInvoiceList()).toBe(invoiceList);
+
+            const parsedTx = SolanaTransaction.from(req.getTransaction()!.getValue_asU8());
+            parsedTx.sign(new SolanaAccount(subsidizer.secretKey()));
+
+            const txSig = new commonpbv4.TransactionSignature();
+            txSig.setValue(parsedTx.signature!);
+            sig = parsedTx.signature!;
+
+            const resp = new transactionpbv4.SignTransactionResponse();
+            resp.setResult(transactionpbv4.SignTransactionResponse.Result.OK);
+            resp.setSignature(txSig);
+
+            callback(undefined, resp);
+        });
+
+    let result = await client.signTransaction(tx);
+    expect(result.TxId).toStrictEqual(sig);
+    expect(result.InvoiceErrors).toBeUndefined();
+
+    invoiceList = new commonpb.InvoiceList();
+    invoiceList.addInvoices(invoiceToProto({
+        Items: [
+            {
+                title: "hello",
+                description: "world",
+                amount: new BigNumber(10),
+            },
+        ]
+    }));
+
+    // Include invoice list
+    result = await client.signTransaction(tx, invoiceList);
+    expect(result.TxId).toStrictEqual(sig);
+    expect(result.InvoiceErrors).toBeUndefined();
+});
+test('signTransaction rejected', async() => {
+    const env = newTestEnv();
+    const subsidizer = PrivateKey.random();
+    const [client, txClientV4] = [env.client, env.txClientV4];
+    const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
+
+    const tx = new SolanaTransaction({ 
+        feePayer: subsidizer.publicKey().solanaKey(),
+        recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
+    }).add(
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
+    
+    when(txClientV4.signTransaction(anything(), anything(), anything()))
+        .thenCall((req: transactionpbv4.SignTransactionRequest, md: grpc.Metadata, callback) => {
+            const err = validateHeaders(md);
+            if (err != undefined) {
+                callback(err, undefined);
+                return;
+            }
+
+            expect(Buffer.from(req.getTransaction()!.getValue_asU8())).toStrictEqual(tx.serialize({
+                requireAllSignatures: false,
+                verifySignatures: false,
+            }));
+
+            const resp = new transactionpbv4.SignTransactionResponse();
+            resp.setResult(transactionpbv4.SignTransactionResponse.Result.REJECTED);
+
+            callback(undefined, resp);
+        });
+    
+    try {
+        await client.signTransaction(tx);
+    } catch (err) {
+        expect(err).toBeInstanceOf(TransactionRejected);
+    }
+});
+test('signTransaction invoice errors', async() => {
+    const env = newTestEnv();
+    const subsidizer = PrivateKey.random();
+    const [client, txClientV4] = [env.client, env.txClientV4];
+    const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
+
+    const tx = new SolanaTransaction({ 
+        feePayer: subsidizer.publicKey().solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
         Token.createTransferInstruction(
@@ -709,23 +909,119 @@ test('submitSolanaTransaction', async () => {
         )
     );
 
-    let invoiceList: commonpb.InvoiceList | undefined = undefined;
+    const invoices = [
+        invoiceToProto({
+            Items: [
+                {
+                    title: "1",
+                    description: "2",
+                    amount: new BigNumber(10),
+                },
+            ]
+        }),
+        invoiceToProto({
+            Items: [
+                {
+                    title: "3",
+                    description: "4",
+                    amount: new BigNumber(10),
+                },
+            ]
+        }),
+        invoiceToProto({
+            Items: [
+                {
+                    title: "5",
+                    description: "6",
+                    amount: new BigNumber(10),
+                },
+            ]
+        }),
+    ];
 
-    let submitted: transactionpbv4.SubmitTransactionRequest | undefined;
-    when(txClientV4.submitTransaction(anything(), anything(), anything()))
-        .thenCall((req: transactionpbv4.SubmitTransactionRequest, md: grpc.Metadata, callback) => {
-            submitted = req;
+    when(txClientV4.signTransaction(anything(), anything(), anything()))
+        .thenCall((req: transactionpbv4.SignTransactionRequest, md: grpc.Metadata, callback) => {
             const err = validateHeaders(md);
             if (err != undefined) {
                 callback(err, undefined);
                 return;
             }
 
-            expect(Buffer.from(req.getTransaction()!.getValue_asU8())).toStrictEqual(transaction.serialize({
+            expect(Buffer.from(req.getTransaction()!.getValue_asU8())).toStrictEqual(tx.serialize({
+                requireAllSignatures: false,
+                verifySignatures: false,
+            }));
+
+            const invoiceErrors = new Array<commonpb.InvoiceError>(3);
+            for (let i = 0; i < invoices.length; i++) {
+                invoiceErrors[i] = new commonpb.InvoiceError();
+                invoiceErrors[i].setOpIndex(i);
+                invoiceErrors[i].setReason(i + 1);
+                invoiceErrors[i].setInvoice(invoices[i]);
+            }
+
+            const resp = new transactionpbv4.SignTransactionResponse();
+            resp.setResult(transactionpbv4.SignTransactionResponse.Result.INVOICE_ERROR);
+            resp.setInvoiceErrorsList(invoiceErrors);
+
+            callback(undefined, resp);
+        });
+    
+    const result = await client.signTransaction(tx);
+    expect(result.InvoiceErrors).toHaveLength(3);
+    result.InvoiceErrors?.forEach((err, i) => {
+        expect(err.getOpIndex()).toBe(i);
+        expect(err.getReason()).toBe((i + 1) as commonpb.InvoiceError.Reason);
+        expect(err.getInvoice()).toBe(invoices[i]);
+    });
+});
+
+test('submitTransaction', async () => {
+    const env = newTestEnv();
+    const subsidizer = PrivateKey.random();
+    const [client, txClientV4] = [env.client, env.txClientV4];
+    const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
+
+    const tx = new SolanaTransaction({ 
+        feePayer: subsidizer.publicKey().solanaKey(),
+        recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
+    }).add(
+        Token.createTransferInstruction(
+            TOKEN_PROGRAM_ID,
+            sender.solanaKey(),
+            destination.solanaKey(),
+            sender.solanaKey(),
+            [],
+            100,
+        )
+    );
+    tx.sign(new SolanaAccount(subsidizer.secretKey()));
+    const sig = tx.signature!;
+
+    let invoiceList: commonpb.InvoiceList | undefined = undefined;
+    let commitment: commonpbv4.Commitment = commonpbv4.Commitment.SINGLE;
+    let expectedDedupeId: Buffer | undefined = undefined;
+
+    when(txClientV4.submitTransaction(anything(), anything(), anything()))
+        .thenCall((req: transactionpbv4.SubmitTransactionRequest, md: grpc.Metadata, callback) => {
+            const err = validateHeaders(md);
+            if (err != undefined) {
+                callback(err, undefined);
+                return;
+            }
+
+            // Validate request
+            expect(Buffer.from(req.getTransaction()!.getValue_asU8())).toStrictEqual(tx.serialize({
                 requireAllSignatures: false,
                 verifySignatures: false,
             }));
             expect(req.getInvoiceList()).toBe(invoiceList);
+            if (expectedDedupeId) {
+                expect(Buffer.from(req.getDedupeId())).toEqual(expectedDedupeId);
+            } else {
+                expect(req.getDedupeId()).toEqual("");
+            }
+            expect(req.getCommitment()).toEqual(commitment);
 
             const txSig = new commonpbv4.TransactionSignature();
             txSig.setValue(sig);
@@ -737,7 +1033,7 @@ test('submitSolanaTransaction', async () => {
             callback(undefined, resp);
         });
 
-    let result = await client.submitSolanaTransaction(transaction);
+    let result = await client.submitTransaction(tx);
     expect(result.TxId).toStrictEqual(sig);
     expect(result.InvoiceErrors).toBeUndefined();
     expect(result.Errors).toBeUndefined();
@@ -753,46 +1049,28 @@ test('submitSolanaTransaction', async () => {
         ]
     }));
 
-    result = await client.submitSolanaTransaction(transaction, invoiceList);
+    result = await client.submitTransaction(tx, invoiceList);
     expect(result.TxId).toStrictEqual(sig);
     expect(result.InvoiceErrors).toBeUndefined();
     expect(result.Errors).toBeUndefined();
-
-    expect(submitted).toBeDefined();
-    expect(submitted!.getTransaction()).toBeDefined();
-    expect(submitted!.getTransaction()!.getValue()).toEqual(transaction.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
-    }));
-    expect(submitted!.getInvoiceList()).toEqual(invoiceList);
-    expect(submitted!.getCommitment()).toEqual(commonpbv4.Commitment.SINGLE);  // default
-    expect(submitted!.getDedupeId()).toEqual("");
 
     // Submit with all options
-    const dedupeId = Buffer.from(uuidv4());
-    result = await client.submitSolanaTransaction(transaction, invoiceList, Commitment.Max, dedupeId);
+    expectedDedupeId = Buffer.from(uuidv4());
+    commitment = commonpbv4.Commitment.MAX;
+    result = await client.submitTransaction(tx, invoiceList, Commitment.Max, expectedDedupeId);
+
     expect(result.TxId).toStrictEqual(sig);
     expect(result.InvoiceErrors).toBeUndefined();
     expect(result.Errors).toBeUndefined();
-
-    expect(submitted).toBeDefined();
-    expect(submitted!.getTransaction()).toBeDefined();
-    expect(submitted!.getTransaction()!.getValue()).toEqual(transaction.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
-    }));
-    expect(submitted!.getInvoiceList()).toEqual(invoiceList);
-    expect(submitted!.getCommitment()).toEqual(commonpbv4.Commitment.MAX);
-    expect(Buffer.from(submitted!.getDedupeId())).toEqual(dedupeId);
 });
-test('submitSolanaTransaction already submitted', async () => {
+test('submitTransaction already submitted', async () => {
     const env = newTestEnv();
+    const subsidizer = PrivateKey.random();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
-    const sig = Buffer.from("somesig");
-    const transaction = new SolanaTransaction({ 
-        feePayer: sender.solanaKey(),
+    const tx = new SolanaTransaction({ 
+        feePayer: subsidizer.publicKey().solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
         Token.createTransferInstruction(
@@ -804,6 +1082,8 @@ test('submitSolanaTransaction already submitted', async () => {
             100,
         )
     );
+    tx.sign(new SolanaAccount(subsidizer.secretKey()));
+    const sig = tx.signature!;
 
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((req: transactionpbv4.SubmitTransactionRequest, md: grpc.Metadata, callback) => {
@@ -818,7 +1098,7 @@ test('submitSolanaTransaction already submitted', async () => {
         });
 
     try {
-        await client.submitSolanaTransaction(transaction);
+        await client.submitTransaction(tx);
         fail();
     } catch (error) {
         expect(error).toBeInstanceOf(AlreadySubmitted);
@@ -851,19 +1131,19 @@ test('submitSolanaTransaction already submitted', async () => {
             }
         });
 
-    const result = await client.submitSolanaTransaction(transaction);
+    const result = await client.submitTransaction(tx);
     expect(result.TxId).toStrictEqual(sig);
     expect(result.InvoiceErrors).toBeUndefined();
     expect(result.Errors).toBeUndefined();
 });
-test('submitSolanaTransaction failed', async () => {
+test('submitTransaction failed', async () => {
     const env = newTestEnv();
+    const subsidizer = PrivateKey.random();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
-    const sig = Buffer.from("somesig");
-    const transaction = new SolanaTransaction({ 
-        feePayer: sender.solanaKey(),
+    const tx = new SolanaTransaction({ 
+        feePayer: subsidizer.publicKey().solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
     }).add(
         Token.createTransferInstruction(
@@ -875,6 +1155,8 @@ test('submitSolanaTransaction failed', async () => {
             100,
         )
     );
+    tx.sign(new SolanaAccount(subsidizer.secretKey()));
+    const sig = tx.signature!;
 
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
@@ -892,17 +1174,16 @@ test('submitSolanaTransaction failed', async () => {
             callback(undefined, resp);
         });
 
-    const resp = await client.submitSolanaTransaction(transaction);
+    const resp = await client.submitTransaction(tx);
     expect(resp.TxId).toStrictEqual(sig);
     expect(resp.InvoiceErrors).toBeUndefined();
     expect(resp.Errors?.OpErrors![0]).toBeInstanceOf(BadNonce);
 });
-test('submitSolanaTransaction rejected', async () => {
+test('submitTransaction rejected', async () => {
     const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
-    const sig = Buffer.from("somesig");
     const transaction = new SolanaTransaction({ 
         feePayer: sender.solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
@@ -919,29 +1200,24 @@ test('submitSolanaTransaction rejected', async () => {
 
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const txSig = new commonpbv4.TransactionSignature();
-            txSig.setValue(sig);
-
             const resp = new transactionpbv4.SubmitTransactionResponse();
-            resp.setSignature(txSig);
             resp.setResult(transactionpbv4.SubmitTransactionResponse.Result.REJECTED);
 
             callback(undefined, resp);
         });
 
     try {
-        await client.submitSolanaTransaction(transaction);
+        await client.submitTransaction(transaction);
         fail();
     } catch (err) {
         expect(err).toBeInstanceOf(TransactionRejected);
     }
 });
-test('submitSolanaTransaction payer required', async () => {
+test('submitTransaction payer required', async () => {
     const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
-    const sig = Buffer.from("somesig");
     const transaction = new SolanaTransaction({ 
         feePayer: sender.solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
@@ -958,29 +1234,24 @@ test('submitSolanaTransaction payer required', async () => {
 
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const txSig = new commonpbv4.TransactionSignature();
-            txSig.setValue(sig);
-
             const resp = new transactionpbv4.SubmitTransactionResponse();
-            resp.setSignature(txSig);
             resp.setResult(transactionpbv4.SubmitTransactionResponse.Result.PAYER_REQUIRED);
 
             callback(undefined, resp);
         });
 
     try {
-        await client.submitSolanaTransaction(transaction);
+        await client.submitTransaction(transaction);
         fail();
     } catch (err) {
         expect(err).toBeInstanceOf(PayerRequired);
     }
 });
-test('submitSolanaTransaction invoice error', async () => {
+test('submitTransaction invoice error', async () => {
     const env = newTestEnv();
     const [client, txClientV4] = [env.client, env.txClientV4];
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
 
-    const sig = Buffer.from("somesig");
     const transaction = new SolanaTransaction({ 
         feePayer: sender.solanaKey(),
         recentBlockhash: new PublicKey(recentBlockhash).toBase58(),
@@ -1027,9 +1298,6 @@ test('submitSolanaTransaction invoice error', async () => {
 
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const txSig = new commonpbv4.TransactionSignature();
-            txSig.setValue(sig);
-
             const invoiceErrors = new Array<commonpb.InvoiceError>(3);
             for (let i = 0; i < 3; i++) {
                 invoiceErrors[i] = new commonpb.InvoiceError();
@@ -1039,14 +1307,13 @@ test('submitSolanaTransaction invoice error', async () => {
             }
 
             const resp = new transactionpbv4.SubmitTransactionResponse();
-            resp.setSignature(txSig);
             resp.setResult(transactionpbv4.SubmitTransactionResponse.Result.INVOICE_ERROR);
             resp.setInvoiceErrorsList(invoiceErrors);
 
             callback(undefined, resp);
         });
 
-    const resp = await client.submitSolanaTransaction(transaction);
+    const resp = await client.submitTransaction(transaction);
     expect(resp.Errors).toBeUndefined();
     expect(resp.InvoiceErrors).toHaveLength(3);
     resp.InvoiceErrors?.forEach((err, i) => {
@@ -1140,39 +1407,6 @@ test('requestAirdrop', async() => {
     }
 });
 
-test('resolveTokenAccounts', async() => {
-    const env = newTestEnv();
-    const [client, accountClientV4] = [env.client, env.accountClientV4];
-
-    const [account, token1, token2] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
-    
-    when (accountClientV4.resolveTokenAccounts(anything(), anything(), anything()))
-        .thenCall((req: accountpbv4.ResolveTokenAccountsRequest, md: grpc.Metadata, callback) => {
-            const err = validateHeaders(md);
-            if (err != undefined) {
-                callback(err, undefined);
-                return;
-            }
-
-            const resp = new accountpbv4.ResolveTokenAccountsResponse();
-            if (Buffer.from(req.getAccountId()!.getValue_asU8()).equals(account.buffer)) {
-                const tokenAccount1 = new commonpbv4.SolanaAccountId();
-                tokenAccount1.setValue(token1.buffer);
-                const tokenAccount2 = new commonpbv4.SolanaAccountId();
-                tokenAccount2.setValue(token2.buffer);
-
-                resp.setTokenAccountsList([tokenAccount1, tokenAccount2]);
-            }
-            callback(undefined, resp);
-        });
-
-    const tokens = await client.resolveTokenAccounts(account);
-    expect(tokens[0]).toEqual(token1);
-    expect(tokens[1]).toEqual(token2);
-
-    expect(await client.resolveTokenAccounts(token1)).toHaveLength(0);
-});
-
 test('internal retry Kin 4', async () => {
     let env = newTestEnv();
     const [accountClientV4, airdropClientV4] = [env.accountClientV4, env.airdropClientV4];
@@ -1230,7 +1464,7 @@ test('internal retry Kin 4', async () => {
     setGetRecentBlockhashResp(txClientV4);
 
     try {
-        await client.createSolanaAccount(account);
+        await client.createAccount(account);
         fail();
     } catch (err) {
         expect(err).toBeDefined();
@@ -1238,7 +1472,7 @@ test('internal retry Kin 4', async () => {
     verify(accountClientV4.createAccount(anything(), anything(), anything())).times(3);
 
     try {
-        await client.getSolanaAccountInfo(new PublicKey(Buffer.alloc(32)));
+        await client.getAccountInfo(new PublicKey(Buffer.alloc(32)));
         fail();
     } catch (err) {
         expect(err).toBeDefined();
@@ -1267,7 +1501,7 @@ test('internal retry Kin 4', async () => {
         )    
     );
     try {
-        await client.submitSolanaTransaction(transaction);
+        await client.submitTransaction(transaction);
         fail();
     } catch (err) {
         expect(err).toBeDefined();
