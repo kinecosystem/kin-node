@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.5.0](https://github.com/kinecosystem/kin-node/releases/tag/0.5.0)
 - Remove Stellar (Kin 2 & Kin 3) support
     - Only Kin 4 and v4 Agora APIs are supported
     - Removed `accountClient`, `txClient`, `kinVersion`, `whitelistKey`, and `desiredKinVersion` from `ClientConfig`

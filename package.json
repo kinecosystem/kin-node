@@ -1,6 +1,6 @@
 {
   "name": "@kinecosystem/kin-sdk-v2",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Kin Node SDK",
   "author": "Kik Engineering",
   "email": "engineering@kik.com",
@@ -16,7 +16,7 @@
   ],
   "dependencies": {
     "@grpc/grpc-js": "^1.1.2",
-    "@kinecosystem/agora-api": "^0.26.0",
+    "@kinecosystem/agora-api": "^0.26.1",
     "@solana/spl-token": "^0.1.4",
     "@solana/web3.js": "^1.9.1",
     "@types/bn.js": "^5.1.0",
