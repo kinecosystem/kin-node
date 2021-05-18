@@ -35,6 +35,7 @@ import { AccountSize } from "../solana/token-program";
 export const SDK_VERSION = "0.2.3";
 export const USER_AGENT_HEADER = "kin-user-agent";
 export const KIN_VERSION_HEADER = "kin-version";
+export const APP_INDEX_HEADER = "app-index";
 export const DESIRED_KIN_VERSION_HEADER = "desired-kin-version";
 export const USER_AGENT = `KinSDK/${SDK_VERSION} node/${process.version}`;
 const SERVICE_CONFIG_CACHE_KEY = "GetServiceConfig";
@@ -115,6 +116,9 @@ export class Internal {
         this.metadata.set(KIN_VERSION_HEADER, "4");
 
         this.appIndex = config.appIndex ? config.appIndex! : 0;
+        if (this.appIndex > 0) {
+            this.metadata.set(APP_INDEX_HEADER, this.appIndex.toString());
+        }
 
         // Currently only caching GetServiceConfig, so limit to 1 entry
         this.responseCache = new LRUCache({
@@ -183,26 +187,26 @@ export class Internal {
                 assocAddr,
                 subsidizerKey,
                 "CloseAccount",
-                key.publicKey().solanaKey(), 
+                key.publicKey().solanaKey(),
                 []
             ));
 
-            const transaction = new Transaction({ 
+            const transaction = new Transaction({
                 feePayer: subsidizerKey,
                 recentBlockhash: recentBlockhash,
             }).add(...instructions);
-            
+
             transaction.partialSign(new SolanaAccount(key.secretKey()));
             if (subsidizer) {
                 transaction.partialSign(new SolanaAccount(subsidizer.secretKey()));
             }
-            
+
             const protoTx = new commonpbv4.Transaction();
             protoTx.setValue(transaction.serialize({
                 requireAllSignatures: false,
                 verifySignatures: false,
             }));
-            
+
             const req = new accountpbv4.CreateAccountRequest();
             req.setTransaction(protoTx);
             req.setCommitment(commitmentToProto(commitment));
@@ -213,7 +217,7 @@ export class Internal {
                         reject(err);
                         return;
                     }
-                    
+
                     switch (resp.getResult()) {
                         case accountpbv4.CreateAccountResponse.Result.EXISTS:
                             reject(new AccountExists());
@@ -328,7 +332,7 @@ export class Internal {
                     }
 
                     const result = new SignTransactionResult();
-                    
+
                     if (resp.getSignature()?.getValue_asU8().length === SIGNATURE_LENGTH) {
                         result.TxId = Buffer.from(resp.getSignature()!.getValue_asU8());
                     }
