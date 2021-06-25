@@ -15,7 +15,7 @@ import {
 } from "@solana/web3.js";
 import BigNumber from "bignumber.js";
 import bs58 from "bs58";
-import grpc from "grpc";
+import grpc from "@grpc/grpc-js";
 import LRUCache from "lru-cache";
 import {
     Commitment, commitmentToProto, Memo, PrivateKey,

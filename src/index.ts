@@ -3,7 +3,7 @@ import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
 import txpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
 import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, u64 } from "@solana/spl-token";
 import { SystemInstruction, SystemProgram, Transaction as SolanaTransaction } from "@solana/web3.js";
-import BigNumber from "bignumber.js";
+import { BigNumber } from "bignumber.js";
 import hash from "hash.js";
 import { xdr } from "stellar-base";
 import { Client } from "./client";
@@ -78,16 +78,16 @@ export function commitmentToProto(commitment: Commitment): commonpbv4.Commitment
     }
 }
 
-// AccountResolution is used to indicate which type of account resolution should be used if a transaction on Kin 4 fails due to 
+// AccountResolution is used to indicate which type of account resolution should be used if a transaction on Kin 4 fails due to
 // an account being unavailable.
 export enum AccountResolution {
     // No account resolution will be used.
     Exact = 0,
-    // When used for a sender key, in a payment or earn request, if Agora is able to resolve the original sender public key to 
+    // When used for a sender key, in a payment or earn request, if Agora is able to resolve the original sender public key to
     // a set of token accounts, the original sender will be used as the owner in the Solana transfer instruction and the first
     // resolved token account will be used as the sender.
     //
-    // When used for a destination key in a payment or earn request, if Agora is able to resolve the destination key to a set 
+    // When used for a destination key in a payment or earn request, if Agora is able to resolve the destination key to a set
     // of token accounts, the first resolved token account will be used as the destination in the Solana transfer instruction.
     Preferred = 1,
 }
@@ -141,7 +141,7 @@ export function xdrInt64ToBigNumber(i64: xdr.Int64): BigNumber {
 
 export function bigNumberToU64(bn: BigNumber): u64 {
     const b = Buffer.alloc(8);
-    b.writeBigUInt64LE(BigInt(bn), 0);
+    b.writeBigUInt64LE(BigInt(bn.toNumber()), 0);
     return u64.fromBuffer(b);
 }
 
@@ -213,12 +213,12 @@ export interface Payment {
     invoice?: Invoice
     memo?: string
 
-    // dedupeId is a unique identifier used by the service to help prevent the 
-    // accidental submission of the same intended transaction twice. 
-    
+    // dedupeId is a unique identifier used by the service to help prevent the
+    // accidental submission of the same intended transaction twice.
+
     // If dedupeId is set, the service will check to see if a transaction
     // was previously submitted with the same dedupeId. If one is found,
-    // it will NOT submit the transaction again, and will return the status 
+    // it will NOT submit the transaction again, and will return the status
     // of the previously submitted transaction.
     dedupeId?: Buffer
 }
@@ -256,14 +256,14 @@ export function parseTransaction(tx: SolanaTransaction, invoiceList?: commonpb.I
 
     let ilRefCount = 0;
     let invoiceTransfers = 0;
-    
+
     let hasEarn = false;
     let hasSpend = false;
     let hasP2P = false;
 
     let appIndex = 0;
     let appId: string | undefined;
-    
+
     for (let i = 0; i < tx.instructions.length; i++) {
         if (isMemo(tx, i)) {
             const decodedMemo = MemoInstruction.decodeMemo(tx.instructions[i]);
@@ -325,7 +325,7 @@ export function parseTransaction(tx: SolanaTransaction, invoiceList?: commonpb.I
             if (i === tx.instructions.length) {
                 throw new Error("missing SplToken::InitializeAccount instruction");
             }
-            
+
             const init = TokenInstruction.decodeInitializeAccount(tx.instructions[i]);
             if (!create.newAccountPubkey.equals(init.account)) {
                 throw new Error("SplToken::InitializeAccount address does not match System::CreateAccount address");
@@ -351,38 +351,38 @@ export function parseTransaction(tx: SolanaTransaction, invoiceList?: commonpb.I
             i++;
             if (i === tx.instructions.length) {
                 creations.push({
-                    owner: PublicKey.fromSolanaKey(init.owner), 
+                    owner: PublicKey.fromSolanaKey(init.owner),
                     address: PublicKey.fromSolanaKey(init.account),
                 });
                 break;
             }
-            
+
             let ownerAuth: SetAuthorityParams;
             try {
                  ownerAuth = TokenInstruction.decodeSetAuthority(tx.instructions[i]);
             } catch (error) {
                 i--;
                 creations.push({
-                    owner: PublicKey.fromSolanaKey(init.owner), 
+                    owner: PublicKey.fromSolanaKey(init.owner),
                     address: PublicKey.fromSolanaKey(init.account),
                 });
                 continue;
             }
 
-            if (ownerAuth.authorityType !== 'AccountOwner') { 
+            if (ownerAuth.authorityType !== 'AccountOwner') {
                 throw new Error("SplToken::SetAuthority must be of type AccountHolder following a close authority");
             }
             if (!ownerAuth.account.equals(init.account)) {
                 throw new Error("SplToken::SetAuthority(AccountHolder) must be for the created account");
             }
-            
+
             creations.push({
                 owner: PublicKey.fromSolanaKey(ownerAuth.newAuthority!),
                 address: PublicKey.fromSolanaKey(init.account),
             });
         } else if (isSPLAssoc(tx, i)) {
             const create = TokenInstruction.decodeCreateAssociatedAccount(tx.instructions[i]);
-            
+
             i++;
             if (i === tx.instructions.length) {
                 throw new Error("missing SplToken::SetAuthority(Close) instruction");
@@ -511,7 +511,7 @@ export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTrans
 
         if (item.getTransactionError()) {
             data.errors = errorsFromStellarTx(envelope, item.getTransactionError()!);
-        }    
+        }
     } else {
         // This case *shouldn't* happen since either a solana or stellar should be set
         throw new Error("invalid transaction");
@@ -547,14 +547,14 @@ export interface EarnBatch {
     // The length of `earns` must be less than or equal to 15.
     earns: Earn[]
 
-    // dedupeId is a unique identifier used by the service to help prevent the 
-    // accidental submission of the same intended transaction twice. 
-    
+    // dedupeId is a unique identifier used by the service to help prevent the
+    // accidental submission of the same intended transaction twice.
+
     // If dedupeId is set, the service will check to see if a transaction
     // was previously submitted with the same dedupeId. If one is found,
-    // it will NOT submit the transaction again, and will return the status 
+    // it will NOT submit the transaction again, and will return the status
     // of the previously submitted transaction.
-    // 
+    //
     // Only available on Kin 4.
     dedupeId?: Buffer
 }
@@ -576,7 +576,7 @@ export interface EarnBatchResult {
     // earnErrors contains any available earn-specific error
     // information.
     //
-    // earnErrors may or may not be set if TxError is set. 
+    // earnErrors may or may not be set if TxError is set.
     earnErrors?: EarnError[]
 }
 
@@ -624,7 +624,7 @@ function isValidAppId(appId: string): boolean {
     if (appId.length < 3 || appId.length > 4) {
         return false;
     }
-    
+
     if (!isAlphaNumeric(appId)) {
         return false;
     }
