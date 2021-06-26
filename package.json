@@ -16,7 +16,7 @@
   ],
   "dependencies": {
     "@grpc/grpc-js": "^1.3.4",
-    "@kinecosystem/agora-api": "^0.26.1",
+    "@kinecosystem/agora-api": "kinecosystem/agora-api#beeman/maintenance",
     "@solana/spl-token": "^0.1.6",
     "@solana/web3.js": "^1.19.0",
     "@types/bn.js": "^5.1.0",

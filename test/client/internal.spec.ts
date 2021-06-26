@@ -11,7 +11,7 @@ import { Account as SolanaAccount, Transaction as SolanaTransaction } from "@sol
 import { BigNumber } from "bignumber.js";
 import bs58 from "bs58";
 import { promises as fs } from "fs";
-import grpc from "grpc";
+import * as grpc from "@grpc/grpc-js";
 import { anything, instance, mock, reset, verify, when } from "ts-mockito";
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -37,6 +37,8 @@ function validateHeaders(md: grpc.Metadata): grpc.ServiceError | undefined {
     if (mdMap[USER_AGENT_HEADER] !== USER_AGENT) {
         return {
             name: "",
+            details: "",
+            metadata: new grpc.Metadata(),
             message: "missing kin-user-agent",
             code: grpc.status.INVALID_ARGUMENT,
         };
@@ -45,6 +47,8 @@ function validateHeaders(md: grpc.Metadata): grpc.ServiceError | undefined {
     if (mdMap[KIN_VERSION_HEADER] !== "4") {
         return {
             name: "",
+            details: "",
+            metadata: new grpc.Metadata(),
             message: "incorrect kin_version",
             code: grpc.status.INVALID_ARGUMENT,
         };
@@ -53,6 +57,8 @@ function validateHeaders(md: grpc.Metadata): grpc.ServiceError | undefined {
     if (mdMap[APP_INDEX_HEADER] && mdMap[APP_INDEX_HEADER] !== "1") {
         return {
             name: "",
+            details: "",
+            metadata: new grpc.Metadata(),
             message: "incorrect app-index",
             code: grpc.status.INVALID_ARGUMENT,
         };
@@ -1122,6 +1128,8 @@ test('submitTransaction already submitted', async () => {
             if (attempt == 1) {
                 const err: grpc.ServiceError = {
                     name: "",
+                    details: "",
+                    metadata: new grpc.Metadata(),
                     message: "",
                     code: grpc.status.INTERNAL,
                 };
@@ -1425,6 +1433,8 @@ test('internal retry Kin 4', async () => {
         .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
+                details: "",
+                metadata: new grpc.Metadata(),
                 message: "",
                 code: grpc.status.INTERNAL,
             };
@@ -1434,6 +1444,8 @@ test('internal retry Kin 4', async () => {
         .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
+                details: "",
+                metadata: new grpc.Metadata(),
                 message: "",
                 code: grpc.status.INTERNAL,
             };
@@ -1443,6 +1455,8 @@ test('internal retry Kin 4', async () => {
         .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
+                details: "",
+                metadata: new grpc.Metadata(),
                 message: "",
                 code: grpc.status.INTERNAL,
             };
@@ -1452,6 +1466,8 @@ test('internal retry Kin 4', async () => {
         .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
+                details: "",
+                metadata: new grpc.Metadata(),
                 message: "",
                 code: grpc.status.INTERNAL,
             };
@@ -1461,6 +1477,8 @@ test('internal retry Kin 4', async () => {
         .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
+                details: "",
+                metadata: new grpc.Metadata(),
                 message: "",
                 code: grpc.status.INTERNAL,
             };
@@ -1532,6 +1550,8 @@ test('internal retry Kin 4', async () => {
         .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
+                details: "",
+                metadata: new grpc.Metadata(),
                 message: "",
                 code: grpc.status.INTERNAL,
             };
@@ -1542,6 +1562,8 @@ test('internal retry Kin 4', async () => {
         .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
+                details: "",
+                metadata: new grpc.Metadata(),
                 message: "",
                 code: grpc.status.INTERNAL,
             };
@@ -1552,6 +1574,8 @@ test('internal retry Kin 4', async () => {
         .thenCall((_, __, callback) => {
             const err: grpc.ServiceError = {
                 name: "",
+                details: "",
+                metadata: new grpc.Metadata(),
                 message: "",
                 code: grpc.status.INTERNAL,
             };

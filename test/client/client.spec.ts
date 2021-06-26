@@ -58,12 +58,12 @@ function setGetServiceConfigResp(client: InternalClient) {
             tokenAccount.setValue(token);
             const tokenProgramAccount = new commonpbv4.SolanaAccountId();
             tokenProgramAccount.setValue(tokenProgram);
-            
+
             const resp = new transactionpbv4.GetServiceConfigResponse();
             resp.setSubsidizerAccount(subsidizerAccount);
             resp.setToken(tokenAccount);
             resp.setTokenProgram(tokenProgramAccount);
-            
+
             return Promise.resolve(resp);
         });
 }
@@ -75,11 +75,11 @@ function setGetServiceConfigRespNoSubsidizer(client: InternalClient) {
             tokenAccount.setValue(token);
             const tokenProgramAccount = new commonpbv4.SolanaAccountId();
             tokenProgramAccount.setValue(tokenProgram);
-            
+
             const resp = new transactionpbv4.GetServiceConfigResponse();
             resp.setToken(tokenAccount);
             resp.setTokenProgram(tokenProgramAccount);
-            
+
             return Promise.resolve(resp);
         });
 }
@@ -146,7 +146,7 @@ test("getBalance with account resolution", async () => {
 
     const account = PrivateKey.random();
     const balances = ["10", "15"];
-    
+
     when(internal.getAccountInfo(anything(), anything()))
         .thenCall(() => {
             return Promise.reject(new AccountDoesNotExist());
@@ -167,7 +167,7 @@ test("getBalance with account resolution", async () => {
 
                 return Promise.resolve(infos);
             }
-        
+
             return Promise.resolve([]);
         });
 
@@ -184,7 +184,7 @@ test("resolveTokenAccounts", async () => {
 
     const account = PrivateKey.random();
     const tokenAccounts = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
-    
+
     when(internal.getAccountInfo(anything(), anything()))
         .thenCall(() => {
             return Promise.reject(new AccountDoesNotExist());
@@ -194,7 +194,7 @@ test("resolveTokenAccounts", async () => {
         .thenCall((key: PublicKey) => {
             if (key.toBase58() == account.publicKey().toBase58()) {
                 const infos: accountpbv4.AccountInfo[] = [];
-                
+
                 tokenAccounts.forEach(tokenAccount => {
                     const id = new commonpbv4.SolanaAccountId();
                     id.setValue(tokenAccount.buffer);
@@ -202,10 +202,10 @@ test("resolveTokenAccounts", async () => {
                     info.setAccountId(id);
                     infos.push(info);
                 });
-                
+
                 return Promise.resolve(infos);
             }
-        
+
             return Promise.resolve([]);
         });
 
@@ -230,25 +230,25 @@ test("mergeTokenAccounts", async() => {
 
     const appSubsidizer = PrivateKey.random();
     const priv = PrivateKey.random();
-    
+
     const ownerId = new commonpbv4.SolanaAccountId();
     ownerId.setValue(priv.publicKey().buffer);
 
     const closeAuthId = new commonpbv4.SolanaAccountId();
-    
+
     // No accounts to merge
     when(internal.resolveTokenAccounts(anything(), anything()))
     .thenCall(() => {
         return Promise.resolve([]);
     });
-    
+
     let txId = await client.mergeTokenAccounts(priv, false);
     expect(txId).toBeUndefined();
-    
+
     // One resolved account, no create assoc
     let resolvedKeys = [PrivateKey.random().publicKey()];
     let infos: accountpbv4.AccountInfo[] = [];
-    
+
     setGetServiceConfigResp(internal);
     when(internal.resolveTokenAccounts(anything(), anything()))
     .thenCall(() => {
@@ -261,18 +261,18 @@ test("mergeTokenAccounts", async() => {
             info.setBalance(new BigNumber(1 + i).toString());
             info.setOwner(ownerId);
             info.setCloseAuthority(closeAuthId);
-            
-            infos.push(info);    
+
+            infos.push(info);
         });
         return Promise.resolve(infos);
     });
-    
+
     txId = await client.mergeTokenAccounts(priv, false);
     expect(txId).toBeUndefined();
 
     // Multiple accounts
     resolvedKeys = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
-    
+
     let signReq: signRequest | undefined;
     let submitReq: submitRequest | undefined;
     setGetRecentBlockhashResp(internal);
@@ -334,7 +334,7 @@ test("mergeTokenAccounts", async() => {
     for (const tc of tcs) {
         signReq = undefined;
         submitReq = undefined;
-        
+
         if (tc.shouldClose) {
             if (tc.subsidizer) {
                 closeAuthId.setValue(tc.subsidizer.publicKey().buffer);
@@ -371,7 +371,7 @@ test("mergeTokenAccounts", async() => {
             expect(signTx.signatures[1].publicKey.toBuffer()).toEqual(priv.publicKey().buffer);
             expect(priv.kp.verify(signTx.serializeMessage(), signTx.signatures[1].signature!)).toBeTruthy();
             await assertMergeTx(signTx, priv, infos, tc.createAssoc, tc.shouldClose, Buffer.from(closeAuthId.getValue_asU8()));
-            
+
             expect(submitReq).toBeDefined();
 
             const submitTx = submitReq!.tx;
@@ -420,7 +420,7 @@ async function assertMergeTx(tx: Transaction, priv: PrivateKey, infos: accountpb
         expect(setAuth.currentAuthority.toBuffer()).toEqual(priv.publicKey().buffer);
         expect(setAuth.authorityType).toEqual('CloseAccount');
         expect(setAuth.newAuthority!.toBuffer()).toEqual(appSubsidizer ? appSubsidizer.publicKey().buffer : subsidizer);
-        
+
         i++;
         dest = assoc;
         remainingAccounts = infos;
@@ -431,7 +431,7 @@ async function assertMergeTx(tx: Transaction, priv: PrivateKey, infos: accountpb
         } else {
             expect(tx.instructions.length).toEqual(infos.length - 1);
         }
-        
+
         dest = new SolanaPublicKey(infos[0].getAccountId()!.getValue_asU8());
         remainingAccounts = infos.slice(1);
     }
@@ -441,7 +441,7 @@ async function assertMergeTx(tx: Transaction, priv: PrivateKey, infos: accountpb
         expect(transfer.source.toBuffer()).toEqual(Buffer.from(info.getAccountId()!.getValue_asU8()));
         expect(transfer.dest).toEqual(dest);
         expect(transfer.owner.toBuffer()).toEqual(priv.publicKey().buffer);
-        expect(transfer.amount).toEqual(BigInt(new BigNumber(info.getBalance())));
+        expect(transfer.amount).toEqual(BigInt(new BigNumber(info.getBalance()).toNumber()));
 
         i++;
 
@@ -463,12 +463,12 @@ test("getTransaction", async () => {
             data.txId = txId;
             return Promise.resolve(data);
         });
-    
+
     const client = new Client(Environment.Test, {
         appIndex: 0,
         internal: instance(internal),
     });
-    
+
     const txId = Buffer.from("somesig");
     const data = await client.getTransaction(txId);
     expect(data).toBeDefined();
@@ -501,7 +501,7 @@ test("submitPayment", async() => {
             result.TxId = tx.signature!;
             return Promise.resolve(result);
         });
-    
+
     setGetServiceConfigResp(internal);
     setGetRecentBlockhashResp(internal);
 
@@ -551,7 +551,7 @@ test("submitPayment", async() => {
     });
     for (const p of payments) {
         const txId = await client.submitPayment(p);
-        
+
         expect(signReq).toBeDefined();
         const signTx = signReq!.tx;
         expect(signTx.signatures).toHaveLength(2);
@@ -575,13 +575,13 @@ test("submitPayment", async() => {
             const expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
             expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
         }
-        
+
         const tokenInstruction = TokenInstruction.decodeTransfer(signTx.instructions[1]);
         expect(tokenInstruction.source.toBuffer()).toEqual(p.sender.publicKey().buffer);
         expect(tokenInstruction.dest.toBuffer()).toEqual(p.destination.buffer);
         expect(tokenInstruction.owner.toBuffer()).toEqual(p.sender.publicKey().buffer);
-        expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
-        
+        expect(tokenInstruction.amount).toEqual(BigInt(p.quarks.toNumber()));
+
         expect(submitReq).toBeDefined();
         expect(submitReq!.dedupeId).toEqual(p.dedupeId);
 
@@ -606,16 +606,16 @@ test("submitPayment with no service subsidizer", async() => {
     const sender = PrivateKey.random();
     const dest = PrivateKey.random();
     const appSubsidizer = PrivateKey.random();
-    
+
     when(internal.submitTransaction(anything(), anything(), anything(), anything()))
         .thenCall((tx: Transaction, il?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
             submitReqs.push({tx, il, commitment, dedupeId});
-            
+
             const result = new SubmitTransactionResult();
             result.TxId = tx.signature!;
             return Promise.resolve(result);
         });
-    
+
     setGetServiceConfigRespNoSubsidizer(internal);
     setGetRecentBlockhashResp(internal);
 
@@ -645,9 +645,9 @@ test("submitPayment with no service subsidizer", async() => {
         quarks: new BigNumber(11),
         subsidizer: appSubsidizer,
     };
-    
+
     const txId = await client.submitPayment(p);
-    
+
     expect(submitReqs).toHaveLength(1);
 
     const request = submitReqs[0];
@@ -663,18 +663,18 @@ test("submitPayment with no service subsidizer", async() => {
     expect(sender.kp.verify(submitTx.serializeMessage(), submitTx.signatures[1].signature!)).toBeTruthy();
 
     expect(submitTx.instructions).toHaveLength(2);
-    
+
     const memoInstruction = MemoInstruction.decodeMemo(submitTx.instructions[0]);
-    
+
     const expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
     expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-    
+
     const tokenInstruction = TokenInstruction.decodeTransfer(submitTx.instructions[1]);
-    
+
     expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
     expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
     expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks.toNumber()));
 });
 test("submitPayment with preferred account resolution", async() => {
     const internal = mock(InternalClient);
@@ -686,24 +686,24 @@ test("submitPayment with preferred account resolution", async() => {
         dedupeId?: Buffer,
     }
     const requests: submitRequest[] = [];
-    
+
     let attemptedSubmission = false;
     when(internal.submitTransaction(anything(), anything(), anything(), anything()))
         .thenCall((tx: Transaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
             requests.push({tx, invoice, commitment, dedupeId});
-            
+
             const result = new SubmitTransactionResult();
             result.TxId = tx.signature!;
             if (!attemptedSubmission) {
                 attemptedSubmission = true;
-            
+
                 const errors = new TransactionErrors();
                 errors.TxError = new AccountDoesNotExist();
                 result.Errors = errors;
             }
             return Promise.resolve(result);
         });
-    
+
     const appSubsidizer = PrivateKey.random();
     const sender = PrivateKey.random();
     const dest = PrivateKey.random();
@@ -713,7 +713,7 @@ test("submitPayment with preferred account resolution", async() => {
         [sender.publicKey().toBase58(), resolvedSender.publicKey()],
         [dest.publicKey().toBase58(), resolvedDest.publicKey()],
     ]);
-    
+
     when(internal.resolveTokenAccounts(anything(), anything()))
         .thenCall((key: PublicKey) => {
             const resolvedAccount = resolvedAccounts.get(key.toBase58());
@@ -721,7 +721,7 @@ test("submitPayment with preferred account resolution", async() => {
             if (resolvedAccount) {
                 const id = new commonpbv4.SolanaAccountId();
                 id.setValue(resolvedAccount.buffer);
-    
+
                 const info = new accountpbv4.AccountInfo();
                 info.setAccountId(id);
                 return Promise.resolve([info]);
@@ -729,7 +729,7 @@ test("submitPayment with preferred account resolution", async() => {
 
             return Promise.resolve([]);
         });
-    
+
     setGetServiceConfigResp(internal);
     setGetRecentBlockhashResp(internal);
 
@@ -764,14 +764,14 @@ test("submitPayment with preferred account resolution", async() => {
         expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
         expect(tx.instructions).toHaveLength(2);
-        
+
         const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
-        
+
         const expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
         expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-        
+
         const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1]);
-        
+
         if (resolved[i]) {
             expect(tokenInstruction.source.toBuffer()).toEqual(resolvedSender.publicKey().buffer);
             expect(tokenInstruction.dest.toBuffer()).toEqual(resolvedDest.publicKey().buffer);
@@ -780,7 +780,7 @@ test("submitPayment with preferred account resolution", async() => {
             expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
         }
         expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-        expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+        expect(tokenInstruction.amount).toEqual(BigInt(p.quarks.toNumber()));
     });
 
     txId = await client.submitPayment(p);
@@ -798,11 +798,11 @@ test("submitPayment with exact account resolution", async() => {
         dedupeId?: Buffer,
     }
     const requests: submitRequest[] = [];
-    
+
     when(internal.submitTransaction(anything(), anything(), anything(), anything()))
         .thenCall((tx: Transaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
             requests.push({tx, invoice, commitment, dedupeId});
-            
+
             return Promise.resolve({
                 TxId: tx.signature!,
                 Errors: {
@@ -810,11 +810,11 @@ test("submitPayment with exact account resolution", async() => {
                 }
             });
         });
-    
+
     const appSubsidizer = PrivateKey.random();
     const sender = PrivateKey.random();
     const dest = PrivateKey.random();
-    
+
     setGetServiceConfigResp(internal);
     setGetRecentBlockhashResp(internal);
 
@@ -837,10 +837,10 @@ test("submitPayment with exact account resolution", async() => {
     } catch (err) {
         expect(err).toBeInstanceOf(AccountDoesNotExist);
     }
-    
+
     expect(requests).toHaveLength(1);
     const request = requests[0];
-    
+
     expect(request).toBeDefined();
 
     const tx = request!.tx;
@@ -852,17 +852,17 @@ test("submitPayment with exact account resolution", async() => {
     expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
     expect(tx.instructions).toHaveLength(2);
-        
+
     const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
-    
+
     const expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
     expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-    
-    const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1]);    
+
+    const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1]);
     expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
     expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
     expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks.toNumber()));
 });
 test("submitPayment with sender create", async() => {
     const internal = mock(InternalClient);
@@ -874,24 +874,24 @@ test("submitPayment with sender create", async() => {
         dedupeId?: Buffer,
     }
     const requests: submitRequest[] = [];
-    
+
     let attemptedSubmission = false;
     when(internal.submitTransaction(anything(), anything(), anything(), anything()))
         .thenCall((tx: Transaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
             requests.push({tx, invoice, commitment, dedupeId});
-            
+
             const result = new SubmitTransactionResult();
             result.TxId = tx.signature!;
             if (!attemptedSubmission) {
                 attemptedSubmission = true;
-            
+
                 const errors = new TransactionErrors();
                 errors.TxError = new AccountDoesNotExist();
                 result.Errors = errors;
             }
             return Promise.resolve(result);
         });
-    
+
     const appSubsidizer = PrivateKey.random();
     const sender = PrivateKey.random();
     const dest = PrivateKey.random();
@@ -899,7 +899,7 @@ test("submitPayment with sender create", async() => {
     const resolvedAccounts = new Map<string, PublicKey>([
         [sender.publicKey().toBase58(), resolvedSender.publicKey()],
     ]);
-    
+
     when(internal.resolveTokenAccounts(anything(), anything()))
         .thenCall((key: PublicKey) => {
             const resolvedAccount = resolvedAccounts.get(key.toBase58());
@@ -907,7 +907,7 @@ test("submitPayment with sender create", async() => {
             if (resolvedAccount) {
                 const id = new commonpbv4.SolanaAccountId();
                 id.setValue(resolvedAccount.buffer);
-    
+
                 const info = new accountpbv4.AccountInfo();
                 info.setAccountId(id);
                 return Promise.resolve([info]);
@@ -915,7 +915,7 @@ test("submitPayment with sender create", async() => {
 
             return Promise.resolve([]);
         });
-    
+
     setGetServiceConfigResp(internal);
     setGetRecentBlockhashResp(internal);
     setGetMinBalanceForRentExemptionResp(internal);
@@ -949,18 +949,18 @@ test("submitPayment with sender create", async() => {
     expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
     expect(tx.instructions).toHaveLength(2);
-    
+
     let memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
-    
+
     let expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
     expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-    
+
     let tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[1]);
-    
+
     expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
     expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
     expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks.toNumber()));
 
     // Second request with sender create
     request = requests[1];
@@ -973,9 +973,9 @@ test("submitPayment with sender create", async() => {
     expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[2].signature!)).toBeTruthy();
 
     expect(tx.instructions).toHaveLength(6);
-    
+
     memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
-    
+
     expected = Memo.new(1, p.type, 1, Buffer.alloc(29));
     expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
 
@@ -996,19 +996,19 @@ test("submitPayment with sender create", async() => {
     expect(closeAuth.currentAuthority.equals(create.newAccountPubkey)).toBeTruthy();
     expect(closeAuth.authorityType).toEqual('CloseAccount');
     expect(closeAuth.newAuthority!.equals(appSubsidizer.publicKey().solanaKey())).toBeTruthy();
-    
+
     const holderAuth = TokenInstruction.decodeSetAuthority(tx.instructions[4]);
     expect(holderAuth.account.equals(create.newAccountPubkey)).toBeTruthy();
     expect(holderAuth.currentAuthority.equals(create.newAccountPubkey)).toBeTruthy();
     expect(holderAuth.authorityType).toEqual('AccountOwner');
     expect(holderAuth.newAuthority!.equals(dest.publicKey().solanaKey())).toBeTruthy();
-    
+
     tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[5]);
-    
+
     expect(tokenInstruction.source.toBuffer()).toEqual(resolvedSender.publicKey().buffer);
     expect(tokenInstruction.dest.equals(create.newAccountPubkey)).toBeTruthy();
     expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks.toNumber()));
 });
 test("submitPayment invalid", async () => {
     const internal = mock(InternalClient);
@@ -1081,11 +1081,11 @@ test("submitPayment sign errors", async() => {
 
             reason = (reason % 3) + 1;
             return Promise.resolve(result);
-        });        
-    
+        });
+
     setGetServiceConfigResp(internal);
-    setGetRecentBlockhashResp(internal);    
-    
+    setGetRecentBlockhashResp(internal);
+
     const client = new Client(Environment.Test, {
         appIndex: 1,
         internal: instance(internal),
@@ -1158,7 +1158,7 @@ test("submitPayment submit errors", async() => {
             reason = (reason % 3) + 1;
             return Promise.resolve(result);
         });
-    
+
     setGetServiceConfigResp(internal);
     setGetRecentBlockhashResp(internal);
 
@@ -1274,7 +1274,7 @@ test("submitEarnBatch", async() => {
             earns: invoiceEarns,
         },
     ];
-    
+
     let signReq: signRequest | undefined;
     let submitReq: submitRequest | undefined;
 
@@ -1295,7 +1295,7 @@ test("submitEarnBatch", async() => {
             result.TxId = tx.signature ? tx.signature : undefined;
             return Promise.resolve(result);
         });
-    
+
     when(internal.submitTransaction(anything(), anything(), anything(), anything()))
     .thenCall((tx: Transaction, il?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
             submitReq = {tx, il, commitment, dedupeId};
@@ -1307,7 +1307,7 @@ test("submitEarnBatch", async() => {
         });
 
     setGetServiceConfigResp(internal);
-    setGetRecentBlockhashResp(internal);    
+    setGetRecentBlockhashResp(internal);
 
     const client = new Client(Environment.Test, {
         appIndex: 1,
@@ -1334,35 +1334,35 @@ test("submitEarnBatch", async() => {
         expect(sender.kp.verify(signTx.serializeMessage(), signTx.signatures[1].signature!)).toBeTruthy();
 
         const memoInstruction = MemoInstruction.decodeMemo(signTx.instructions[0]);
-        
-        if (b.memo) { 
+
+        if (b.memo) {
             expect(memoInstruction.data).toEqual(b.memo);
         } else if (b.earns[0].invoice) {
             const serialized = submitReq!.il!.serializeBinary();
             const buf = Buffer.from(hash.sha224().update(serialized).digest('hex'), "hex");
             const expected = Memo.new(1, TransactionType.Earn, 1, buf);
-            
+
             expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
         } else {
             // since we have an app index configured, we still expect a memo
             const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
             expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
         }
-        
+
         expect(signTx.instructions).toHaveLength(16);  // including memo
 
         for (let i = 0; i < 15; i++) {
-            const tokenInstruction = TokenInstruction.decodeTransfer(signTx.instructions[i + 1]);    
+            const tokenInstruction = TokenInstruction.decodeTransfer(signTx.instructions[i + 1]);
             expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
 
             expect(tokenInstruction.dest.toBuffer()).toEqual(b.earns[i].destination.buffer);
             expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
             expect(tokenInstruction.amount).toEqual(BigInt((i + 1)));
         }
-        
+
         expect(submitReq).toBeDefined();
         expect(submitReq!.dedupeId).toEqual(b.dedupeId);
-        
+
         const submitTx = submitReq!.tx;
         expect(submitTx.signatures).toHaveLength(2);
         expect(submitTx.signatures[0].publicKey.toBuffer()).toEqual(subsidizer);
@@ -1407,8 +1407,8 @@ test("submitEarnBatch with no service subsidizer", async() => {
         });
 
     setGetServiceConfigRespNoSubsidizer(internal);
-    setGetRecentBlockhashResp(internal);    
-    
+    setGetRecentBlockhashResp(internal);
+
     const client = new Client(Environment.Test, {
         appIndex: 1,
         internal: instance(internal),
@@ -1432,7 +1432,7 @@ test("submitEarnBatch with no service subsidizer", async() => {
     expect(result.txId).toEqual(txId);
     expect(result.txError).toBeUndefined();
     expect(result.earnErrors).toBeUndefined();
-    
+
     expect(request).toBeDefined();
     const tx = request!.tx;
 
@@ -1443,14 +1443,14 @@ test("submitEarnBatch with no service subsidizer", async() => {
     expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
     const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
-    
+
     const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
     expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-    
+
     expect(tx.instructions).toHaveLength(earnCount + 1);
 
     for (let i = 0; i < earnCount; i++) {
-        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);    
+        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);
             expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
             expect(tokenInstruction.dest.toBuffer()).toEqual(earns[i].destination.buffer);
             expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
@@ -1466,10 +1466,10 @@ test("submitEarnBatch with preferred account resolution", async() => {
     const resolvedAccounts = new Map<string, PublicKey>([
         [sender.publicKey().toBase58(), resolvedSender.publicKey()],
     ]);
-    
+
     const originalDests: PublicKey[] = [];
     const resolvedDests: PublicKey[] = [];
-    
+
     const earnCount = 15;
     const earns = new Array<Earn>(earnCount);
     for (let i = 0; i < earnCount; i++) {
@@ -1479,7 +1479,7 @@ test("submitEarnBatch with preferred account resolution", async() => {
             quarks: new BigNumber(1 + i),
         };
         originalDests.push(dest.publicKey());
-        
+
         const resolvedDest = PrivateKey.random().publicKey();
         resolvedDests.push(resolvedDest);
         resolvedAccounts.set(dest.publicKey().toBase58(), resolvedDest);
@@ -1521,10 +1521,10 @@ test("submitEarnBatch with preferred account resolution", async() => {
             if (resolvedAccount) {
                 const id = new commonpbv4.SolanaAccountId();
                 id.setValue(resolvedAccount.buffer);
-    
+
                 const info = new accountpbv4.AccountInfo();
                 info.setAccountId(id);
-    
+
                 return Promise.resolve([info]);
             }
 
@@ -1532,8 +1532,8 @@ test("submitEarnBatch with preferred account resolution", async() => {
         });
 
     setGetServiceConfigResp(internal);
-    setGetRecentBlockhashResp(internal);    
-    
+    setGetRecentBlockhashResp(internal);
+
     const client = new Client(Environment.Test, {
         appIndex: 1,
         internal: instance(internal),
@@ -1544,17 +1544,17 @@ test("submitEarnBatch with preferred account resolution", async() => {
         earns: earns,
         subsidizer: appSubsidizer,
     });
-    
+
     expect(result.txId.length).toEqual(64);
     expect(result.txId.equals(Buffer.alloc(64).fill(0))).toBeFalsy();
     expect(result.txError).toBeUndefined();
     expect(result.earnErrors).toBeUndefined();
-    
+
     expect(requests).toHaveLength(2);
     for (let reqId = 0; reqId < requests.length; reqId++) {
         const batchIndex = Math.floor(reqId / 2);
         const resolved = (reqId % 2) == 1;
-        
+
         const req = requests[reqId];
         const tx = req.tx;
 
@@ -1565,15 +1565,15 @@ test("submitEarnBatch with preferred account resolution", async() => {
         expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
         const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
-        
+
         const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
         expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-        
+
         expect(tx.instructions).toHaveLength(earnCount + 1);
 
         for (let i = 0; i < earnCount; i++) {
-            const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);    
-            
+            const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);
+
             if (resolved) {
                 expect(tokenInstruction.source.toBuffer()).toEqual(resolvedSender.publicKey().buffer);
                 expect(tokenInstruction.dest.toBuffer()).toEqual(resolvedDests[batchIndex * 18 + i].buffer);
@@ -1581,7 +1581,7 @@ test("submitEarnBatch with preferred account resolution", async() => {
                 expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
                 expect(tokenInstruction.dest.toBuffer()).toEqual(originalDests[batchIndex * 18 + i].buffer);
             }
-            
+
             expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
             expect(tokenInstruction.amount).toEqual(BigInt((batchIndex * 18 + i + 1)));
         }
@@ -1614,7 +1614,7 @@ test("submitEarnBatch with exact account resolution", async() => {
     when(internal.submitTransaction(anything(), anything(), anything(), anything()))
         .thenCall((tx: Transaction, invoice?: commonpb.InvoiceList, commitment?: Commitment, dedupeId?: Buffer) => {
             requests.push({tx, invoiceList: invoice, commitment, dedupeId});
-            
+
             return Promise.resolve({
                 TxId: Buffer.alloc(64),
                 Errors: {
@@ -1624,8 +1624,8 @@ test("submitEarnBatch with exact account resolution", async() => {
         });
 
     setGetServiceConfigResp(internal);
-    setGetRecentBlockhashResp(internal);    
-    
+    setGetRecentBlockhashResp(internal);
+
     const client = new Client(Environment.Test, {
         appIndex: 1,
         internal: instance(internal),
@@ -1651,14 +1651,14 @@ test("submitEarnBatch with exact account resolution", async() => {
     expect(sender.kp.verify(tx.serializeMessage(), tx.signatures[1].signature!)).toBeTruthy();
 
     const memoInstruction = MemoInstruction.decodeMemo(tx.instructions[0]);
-    
+
     const expected = Memo.new(1, TransactionType.Earn, 1, Buffer.alloc(29));
     expect(memoInstruction.data).toEqual(expected.buffer.toString("base64"));
-    
+
     expect(tx.instructions).toHaveLength(earnCount + 1);
 
     for (let i = 0; i < earnCount; i++) {
-        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);    
+        const tokenInstruction = TokenInstruction.decodeTransfer(tx.instructions[i + 1]);
         expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
 
         expect(tokenInstruction.dest.toBuffer()).toEqual(earns[i].destination.buffer);
@@ -1766,8 +1766,8 @@ test("submitEarnBatch failures", async() => {
         });
 
     setGetServiceConfigResp(internal);
-    setGetRecentBlockhashResp(internal);    
-    
+    setGetRecentBlockhashResp(internal);
+
     client = new Client(Environment.Test, {
         appIndex: 1,
         internal: instance(internal),
@@ -1830,11 +1830,11 @@ test("submitEarnBatch sign invoice errors", async() => {
             quarks: new BigNumber(1 + i),
         };
     }
-    
+
     let client = new Client(Environment.Test, {
         internal: instance(internal),
     });
-    
+
     when(internal.signTransaction(anything(), anything()))
         .thenCall(() => {
             const invoiceError = new commonpb.InvoiceError();
@@ -1843,7 +1843,7 @@ test("submitEarnBatch sign invoice errors", async() => {
             const invoiceError2 = new commonpb.InvoiceError();
             invoiceError2.setOpIndex(3);
             invoiceError2.setReason(commonpb.InvoiceError.Reason.ALREADY_PAID);
-            
+
             return Promise.resolve({
                 TxId: Buffer.alloc(32),
                 InvoiceErrors: [
@@ -1854,8 +1854,8 @@ test("submitEarnBatch sign invoice errors", async() => {
         });
 
     setGetServiceConfigResp(internal);
-    setGetRecentBlockhashResp(internal);    
-    
+    setGetRecentBlockhashResp(internal);
+
     client = new Client(Environment.Test, {
         appIndex: 1,
         internal: instance(internal),
@@ -1868,7 +1868,7 @@ test("submitEarnBatch sign invoice errors", async() => {
     expect(result.txId).toEqual(Buffer.alloc(32));
     expect(result.txError).toBeInstanceOf(TransactionRejected);
     expect(result.earnErrors).toBeDefined();
-    
+
     expect(result.earnErrors!).toHaveLength(2);
     expect(result.earnErrors![0].earnIndex).toEqual(1);
     expect(result.earnErrors![0].error).toBeInstanceOf(SkuNotFound);
@@ -1889,11 +1889,11 @@ test("submitEarnBatch submit invoice errors", async() => {
             quarks: new BigNumber(1 + i),
         };
     }
-    
+
     let client = new Client(Environment.Test, {
         internal: instance(internal),
     });
-    
+
     when(internal.signTransaction(anything(), anything()))
         .thenCall((tx: Transaction) => {
             const result = new SignTransactionResult();
@@ -1911,7 +1911,7 @@ test("submitEarnBatch submit invoice errors", async() => {
             const invoiceError2 = new commonpb.InvoiceError();
             invoiceError2.setOpIndex(3);
             invoiceError2.setReason(commonpb.InvoiceError.Reason.ALREADY_PAID);
-            
+
             return Promise.resolve({
                 TxId: Buffer.alloc(32),
                 InvoiceErrors: [
@@ -1922,8 +1922,8 @@ test("submitEarnBatch submit invoice errors", async() => {
         });
 
     setGetServiceConfigResp(internal);
-    setGetRecentBlockhashResp(internal);    
-    
+    setGetRecentBlockhashResp(internal);
+
     client = new Client(Environment.Test, {
         appIndex: 1,
         internal: instance(internal),
@@ -1936,7 +1936,7 @@ test("submitEarnBatch submit invoice errors", async() => {
     expect(result.txId).toEqual(Buffer.alloc(32));
     expect(result.txError).toBeInstanceOf(TransactionRejected);
     expect(result.earnErrors).toBeDefined();
-    
+
     expect(result.earnErrors!).toHaveLength(2);
     expect(result.earnErrors![0].earnIndex).toEqual(1);
     expect(result.earnErrors![0].error).toBeInstanceOf(SkuNotFound);
@@ -1976,7 +1976,7 @@ test("requestAirdrop", async() => {
         internal: instance(internal),
         defaultCommitment: Commitment.Recent,
     });
-    
+
     let txID = await client.requestAirdrop(pk.publicKey(), new BigNumber(10));
     expect(txID).toEqual(Buffer.alloc(32));
 
