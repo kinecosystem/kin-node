@@ -1,4 +1,4 @@
-import commonpb, { InvoiceList } from "@kinecosystem/agora-api/node/common/v3/model_pb";
+import commonpb, { InvoiceList } from "@kin-beta/agora-api/node/common/v3/model_pb";
 import { Account, Transaction } from "@solana/web3.js";
 import express from "express";
 import { hmac, sha256 } from "hash.js";
@@ -109,7 +109,7 @@ export function CreateAccountHandler(env: Environment, callback: (req: CreateAcc
             interface requestBody {
                 solana_transaction: string
             }
-            
+
             const reqBody = <requestBody>req.body;
 
             let userId: string | undefined;
@@ -152,7 +152,7 @@ export function CreateAccountHandler(env: Environment, callback: (req: CreateAcc
                 resp.sendStatus(403);
                 return;
             }
-            
+
             const sig = createResponse.transaction.signature;
             if (sig && sig != Buffer.alloc(64).fill(0)) {
                 resp.status(200).send({
@@ -317,7 +317,7 @@ export function SignTransactionHandler(env: Environment, callback: (req: SignTra
                 });
                 return;
             }
-            
+
             const sig = signResponse.transaction.signature;
             if (sig && sig != Buffer.alloc(64).fill(0)) {
                 resp.status(200).send({

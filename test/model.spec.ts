@@ -1,5 +1,5 @@
-import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
-import txpb from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
+import commonpb from "@kin-beta/agora-api/node/common/v3/model_pb";
+import txpb from "@kin-beta/agora-api/node/transaction/v4/transaction_service_pb";
 import { ASSOCIATED_TOKEN_PROGRAM_ID, Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import * as solanaweb3 from "@solana/web3.js";
 import BigNumber from "bignumber.js";
@@ -69,7 +69,7 @@ test("txDataFromProto", () => {
     const serializedInvoiceList = createInvoiceList({ invoices: invoices }).serializeBinary();
     const fk = Buffer.from(hash.sha224().update(serializedInvoiceList).digest('hex'), "hex");
     const kinMemo = Memo.new(1, TransactionType.P2P, 0, fk);
-    const tx = new solanaweb3.Transaction({ 
+    const tx = new solanaweb3.Transaction({
         feePayer: owner.publicKey().solanaKey(),
         recentBlockhash: recentBlockhash,
      }).add(
@@ -141,7 +141,7 @@ test("txDataFromProto no invoices", () => {
     const owner = PrivateKey.random();
     const recentBlockhash = new solanaweb3.Account().publicKey.toBase58();
     const kinMemo = Memo.new(1, TransactionType.P2P, 0, Buffer.alloc(0));
-    const tx = new solanaweb3.Transaction({ 
+    const tx = new solanaweb3.Transaction({
         feePayer: owner.publicKey().solanaKey(),
         recentBlockhash: recentBlockhash,
      }).add(
@@ -227,7 +227,7 @@ test("txDataFromProto invoice payment count mismatch", () => {
     const serializedInvoiceList = createInvoiceList({ invoices: invoices }).serializeBinary();
     const fk = Buffer.from(hash.sha224().update(serializedInvoiceList).digest('hex'), "hex");
     const kinMemo = Memo.new(1, TransactionType.P2P, 0, fk);
-    const tx = new solanaweb3.Transaction({ 
+    const tx = new solanaweb3.Transaction({
         feePayer: owner.publicKey().solanaKey(),
         recentBlockhash: recentBlockhash,
      }).add(
@@ -304,7 +304,7 @@ test("parseTransaction transfers no invoices", () => {
             20,
         ),
     );
-    
+
     const [creations, payments] = parseTransaction(tx);
     expect(creations.length).toEqual(0);
     expect(payments.length).toEqual(2);
@@ -358,7 +358,7 @@ test("parseTransaction transfers with invoices", () => {
         expect(payments[i].invoice).toEqual(protoToInvoice(il.getInvoicesList()[i]));
         expect(payments[i].memo).toBeUndefined();
     }
-    
+
     // Multiple memos
     const [memoInstruction1, il1] = getInvoiceMemoInstruction(TransactionType.Spend, 10, 1);
     const [memoInstruction2] = getInvoiceMemoInstruction(TransactionType.P2P, 10, 1);
@@ -385,14 +385,14 @@ test("parseTransaction transfers with invoices", () => {
             20,
         ),
     );
-    
+
     [creations, payments] = parseTransaction(tx, il1);
     expect(creations.length).toEqual(0);
     expect(payments.length).toEqual(2);
 
     const expectedInvoices = [il1.getInvoicesList()[0], undefined];
     const expectedTypes = [TransactionType.Spend, TransactionType.P2P];
-        
+
     for (let i = 0; i < 2; i++) {
         expect(payments[i].sender.solanaKey().equals(keys[1+i])).toBeTruthy();
         expect(payments[i].destination.solanaKey().equals(keys[2+i])).toBeTruthy();
@@ -409,7 +409,7 @@ test("parseTransaction transfers with invoices", () => {
 
 test("parseTransaction with text memo", () => {
     const keys = generateKeys(5);
-    
+
     // Single memo
     let tx = new solanaweb3.Transaction({
         feePayer: keys[0],
@@ -445,7 +445,7 @@ test("parseTransaction with text memo", () => {
         expect(payments[i].invoice).toBeUndefined();
         expect(payments[i].memo).toEqual('1-test');
     }
-    
+
     // Multiple memos
     const expectedMemos = ['1-test-alpha', '1-test-beta'];
 
@@ -471,7 +471,7 @@ test("parseTransaction with text memo", () => {
             20,
         ),
     );
-    
+
     [creations, payments] = parseTransaction(tx);
     expect(creations.length).toEqual(0);
     expect(payments.length).toEqual(2);
@@ -482,7 +482,7 @@ test("parseTransaction with text memo", () => {
         expect(payments[i].type).toEqual(TransactionType.Unknown);
         expect(payments[i].quarks).toEqual(((1+i)*10).toString());
         expect(payments[i].invoice).toBeUndefined();
-        expect(payments[i].memo).toEqual(expectedMemos[i]);  
+        expect(payments[i].memo).toEqual(expectedMemos[i]);
     }
 });
 
@@ -610,11 +610,11 @@ test("parseTransaction invalid memo combinations", () => {
             expect(error.toString()).toContain('cannot mix earns with P2P/spends');
         }
     });
-    
+
     // Mixed app IDs
     memoInstruction1 = MemoProgram.memo({data: '1-kik'});
     let memoInstruction2 = MemoProgram.memo({data: '1-kin'});
-    
+
     let tx = new solanaweb3.Transaction({
         feePayer:keys[0],
     }).add(
@@ -653,7 +653,7 @@ test("parseTransaction invalid memo combinations", () => {
     tx = new solanaweb3.Transaction({
         feePayer: keys[0],
     }).add(
-        memoInstruction, 
+        memoInstruction,
         Token.createTransferInstruction(
             TOKEN_PROGRAM_ID,
             keys[1],

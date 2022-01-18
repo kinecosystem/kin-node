@@ -16,7 +16,7 @@ export async function retryAsync<T>(fn: () => Promise<T>, ...strategies: ShouldR
             return await fn();
         } catch (err) {
             for (const s of strategies) {
-                if (!await s(i, err)) {
+                if (!await s(i, err as Error)) {
                     return Promise.reject(err);
                 }
             }

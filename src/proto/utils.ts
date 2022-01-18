@@ -1,8 +1,8 @@
 import BigNumber from "bignumber.js";
 import { Invoice, invoiceToProto, PublicKey } from "..";
-import modelpbv3 from "@kinecosystem/agora-api/node/common/v3/model_pb";
-import modelpb from "@kinecosystem/agora-api/node/common/v4/model_pb";
-import txpb from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
+import modelpbv3 from "@kin-beta/agora-api/node/common/v3/model_pb";
+import modelpb from "@kin-beta/agora-api/node/common/v4/model_pb";
+import txpb from "@kin-beta/agora-api/node/transaction/v4/transaction_service_pb";
 
 export interface InvoiceListParams {
     invoices: Invoice[]

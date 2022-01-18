@@ -1,8 +1,8 @@
-import accountgrpcv4 from "@kinecosystem/agora-api/node/account/v4/account_service_grpc_pb";
-import airdropgrpcv4 from "@kinecosystem/agora-api/node/airdrop/v4/airdrop_service_grpc_pb";
-import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
-import transactiongrpcv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_grpc_pb";
-import transactionpbv4 from "@kinecosystem/agora-api/node/transaction/v4/transaction_service_pb";
+import accountgrpcv4 from "@kin-beta/agora-api/node/account/v4/account_service_grpc_pb";
+import airdropgrpcv4 from "@kin-beta/agora-api/node/airdrop/v4/airdrop_service_grpc_pb";
+import commonpb from "@kin-beta/agora-api/node/common/v3/model_pb";
+import transactiongrpcv4 from "@kin-beta/agora-api/node/transaction/v4/transaction_service_grpc_pb";
+import transactionpbv4 from "@kin-beta/agora-api/node/transaction/v4/transaction_service_pb";
 import { ASSOCIATED_TOKEN_PROGRAM_ID, Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Account as SolanaAccount, PublicKey as SolanaPublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
 import BigNumber from "bignumber.js";
@@ -212,7 +212,7 @@ export class Client {
     async mergeTokenAccounts(key: PrivateKey, createAssociatedAccount: boolean, commitment: Commitment = this.defaultCommitment, subsidizer?: PrivateKey): Promise<Buffer|undefined> {
         const existingAccounts = await this.internal.resolveTokenAccounts(key.publicKey(), true);
         const owner = key.publicKey().solanaKey();
-        
+
         if (existingAccounts.length === 0 || (!createAssociatedAccount && existingAccounts.length === 1)) {
             return Promise.resolve(undefined);
         }
@@ -221,7 +221,7 @@ export class Client {
 
         const signers = [key];
         let subsidizerId: SolanaPublicKey;
-        
+
         const config = await this.internal.getServiceConfig();
         if (!config.getSubsidizerAccount() && !subsidizer) {
             return Promise.reject(new NoSubsidizerError());
@@ -243,7 +243,7 @@ export class Client {
                 mint,
                 owner,
             );
-            
+
             if (!Buffer.from(existingAccounts[0].getAccountId()!.getValue_asU8()).equals(assoc.toBuffer())) {
                 instructions.push(Token.createAssociatedTokenAccountInstruction(
                     ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -334,7 +334,7 @@ export class Client {
     // If the payment has an invoice, an app index _must_ be set.
     // If the payment has a memo, an invoice cannot also be provided.
     async submitPayment(
-        payment: Payment, commitment: Commitment = this.defaultCommitment, senderResolution: AccountResolution = AccountResolution.Preferred, 
+        payment: Payment, commitment: Commitment = this.defaultCommitment, senderResolution: AccountResolution = AccountResolution.Preferred,
         destinationResolution: AccountResolution = AccountResolution.Preferred, senderCreate = false,
     ): Promise<Buffer> {
         if (payment.invoice && !this.appIndex) {
@@ -374,10 +374,10 @@ export class Client {
 
     // submitEarnBatch submits a batch of earns in a single transaction.
     //
-    // EarnBatch is limited to 15 earns, which is roughly the max number of 
+    // EarnBatch is limited to 15 earns, which is roughly the max number of
     // transfers that can fit inside a Solana transaction.
     async submitEarnBatch(
-        batch: EarnBatch, commitment: Commitment = this.defaultCommitment, senderResolution: AccountResolution = AccountResolution.Preferred, 
+        batch: EarnBatch, commitment: Commitment = this.defaultCommitment, senderResolution: AccountResolution = AccountResolution.Preferred,
         destinationResolution: AccountResolution = AccountResolution.Preferred
     ): Promise<EarnBatchResult> {
         if (batch.earns.length === 0) {
@@ -417,7 +417,7 @@ export class Client {
         };
         if (submitResult.Errors) {
             result.txError = submitResult.Errors.TxError;
-            
+
             if (submitResult.Errors.PaymentErrors && submitResult.Errors.PaymentErrors.length > 0) {
                 result.earnErrors = new Array<EarnError>();
                 submitResult.Errors.PaymentErrors.forEach((error, i) => {
@@ -554,10 +554,10 @@ export class Client {
         if (createSigner) {
             signers.push(createSigner);
         }
-        
+
         const instructions = [];
         let invoiceList: commonpb.InvoiceList | undefined = undefined;
-        
+
         if (payment.memo) {
             instructions.push(MemoProgram.memo({data: payment.memo}));
         } else if (this.appIndex) {
@@ -578,7 +578,7 @@ export class Client {
         if (createInstructions) {
             instructions.push(...createInstructions);
         }
-        
+
         let sender: PublicKey;
         if (transferSender) {
             sender = transferSender;
@@ -604,7 +604,7 @@ export class Client {
 
     private async submitEarnBatchWithResolution(
         batch: EarnBatch, config: transactionpbv4.GetServiceConfigResponse,
-        commitment: Commitment, senderResolution: AccountResolution = AccountResolution.Preferred, 
+        commitment: Commitment, senderResolution: AccountResolution = AccountResolution.Preferred,
         destinationResolution: AccountResolution = AccountResolution.Preferred
     ): Promise<SubmitTransactionResult> {
         let result = await this.submitEarnBatchTx(batch, config, commitment);
@@ -669,7 +669,7 @@ export class Client {
                     invoiceList!.addInvoices(invoiceToProto(earn.invoice));
                 }
             });
-            
+
             let fk = Buffer.alloc(29);
             if (invoiceList.getInvoicesList().length > 0) {
                 if (invoiceList.getInvoicesList().length != batch.earns.length) {

@@ -14,6 +14,7 @@
     "dist",
     "node_modules",
     "examples",
+    "tmp",
     "**/*.spec.ts"
   ]
 }

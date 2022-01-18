@@ -1,5 +1,5 @@
-import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
-import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
+import commonpb from "@kin-beta/agora-api/node/common/v3/model_pb";
+import commonpbv4 from "@kin-beta/agora-api/node/common/v4/model_pb";
 import { Transaction } from "@solana/web3.js";
 import { xdr } from "stellar-base";
 import { TokenInstruction } from "./solana/token-program";

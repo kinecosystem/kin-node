@@ -1,26 +1,26 @@
-import commonpb from "@kinecosystem/agora-api/node/common/v3/model_pb";
-import commonpbv4 from "@kinecosystem/agora-api/node/common/v4/model_pb";
+import commonpb from "@kin-beta/agora-api/node/common/v3/model_pb";
+import commonpbv4 from "@kin-beta/agora-api/node/common/v4/model_pb";
 import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Transaction as SolanaTransaction } from "@solana/web3.js";
 import { xdr } from "stellar-base";
 import { PrivateKey } from "../src";
 import {
-    AccountDoesNotExist, 
+    AccountDoesNotExist,
     AccountExists,
-    AlreadyPaid, 
+    AlreadyPaid,
     BadNonce,
     DestinationDoesNotExist,
     errorFromProto,
     errorsFromSolanaTx,
-    errorsFromStellarTx, 
+    errorsFromStellarTx,
     errorsFromXdr,
     InsufficientBalance,
-    InsufficientFee, 
+    InsufficientFee,
     InvalidSignature,
     invoiceErrorFromProto,
     Malformed,
     SenderDoesNotExist,
-    SkuNotFound, 
+    SkuNotFound,
     TransactionFailed,
     WrongDestination
 } from "../src/errors";
@@ -246,7 +246,7 @@ test("invoiceErrorFromProto", () => {
 
 test("errorFromSolanaTx", () => {
     const [sender, destination] = [PrivateKey.random().publicKey(), PrivateKey.random().publicKey()];
-    const tx = new SolanaTransaction({ 
+    const tx = new SolanaTransaction({
         feePayer: sender.solanaKey(),
     }).add(
         MemoProgram.memo({data: "data"}),
@@ -272,7 +272,7 @@ test("errorFromSolanaTx", () => {
         {
             index: 1,
             expectedOpIndex: 1,
-            expectedPaymentIndex: 0 
+            expectedPaymentIndex: 0
         },
         {
             index: 0,
@@ -287,7 +287,7 @@ test("errorFromSolanaTx", () => {
 
         const errors = errorsFromSolanaTx(tx, protoError);
         expect(errors.TxError).toBeInstanceOf(AccountDoesNotExist);
-        
+
         expect(errors.OpErrors).toBeDefined();
         expect(errors.OpErrors!.length).toEqual(3);
         for (let i = 0; i < errors.OpErrors!.length; i++) {
@@ -339,7 +339,7 @@ test("errorFromStellarTx", () => {
 
         const errors = errorsFromStellarTx(env, protoError);
         expect(errors.TxError).toBeInstanceOf(AccountDoesNotExist);
-        
+
         expect(errors.OpErrors).toBeDefined();
         expect(errors.OpErrors!.length).toEqual(4);
         for (let i = 0; i < errors.OpErrors!.length; i++) {

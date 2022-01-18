@@ -8,7 +8,7 @@ export const MAX_VERSION = 1;
 
 // Memo implements the Agora memo specification.
 //
-// Spec: https://github.com/kinecosystem/agora-api
+// Spec: https://github.com/kin-beta/agora-api
 export class Memo {
     buffer: Buffer;
     constructor(buf: Buffer) {
