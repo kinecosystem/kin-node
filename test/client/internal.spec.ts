@@ -1,3 +1,4 @@
+import { Metadata } from '@grpc/grpc-js/src/metadata'
 import accountgrpcv4 from "@kin-beta/agora-api/node/account/v4/account_service_grpc_pb";
 import accountpbv4 from "@kin-beta/agora-api/node/account/v4/account_service_pb";
 import airdropgrpcv4 from "@kin-beta/agora-api/node/airdrop/v4/airdrop_service_grpc_pb";
@@ -11,7 +12,7 @@ import { Account as SolanaAccount, Transaction as SolanaTransaction } from "@sol
 import { BigNumber } from "bignumber.js";
 import bs58 from "bs58";
 import { promises as fs } from "fs";
-import grpc from "grpc";
+import grpc from "@grpc/grpc-js";
 import { anything, instance, mock, reset, verify, when } from "ts-mockito";
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -32,7 +33,7 @@ const minBalanceForRentExemption = 40175902;
 const subsidizer = PrivateKey.random().publicKey().buffer;
 const token = PrivateKey.random().publicKey().buffer;
 
-function validateHeaders(md: grpc.Metadata): grpc.ServiceError | undefined {
+function validateHeaders(md: grpc.Metadata): grpc.ServiceError | any | undefined {
     const mdMap = md.getMap();
     if (mdMap[USER_AGENT_HEADER] !== USER_AGENT) {
         return {
@@ -487,7 +488,7 @@ test('resolveTokenAccounts', async() => {
     // Account info requested, only IDs available
     try {
         await client.resolveTokenAccounts(account, true);
-    } catch (error) {
+    } catch (error: any) {
         expect(error.toString()).toContain("server does not support resolving with account info");
     }
 
@@ -1120,7 +1121,7 @@ test('submitTransaction already submitted', async () => {
             attempt = attempt + 1;
 
             if (attempt == 1) {
-                const err: grpc.ServiceError = {
+                const err = {
                     name: "",
                     message: "",
                     code: grpc.status.INTERNAL,
@@ -1423,46 +1424,46 @@ test('internal retry Kin 4', async () => {
     const account = PrivateKey.random();
     when(accountClientV4.createAccount(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
+            const err = {
                 name: "",
                 message: "",
-                code: grpc.status.INTERNAL,
+                code: grpc.status.INTERNAL
             };
             callback(err, new accountpbv4.CreateAccountRequest());
         });
     when(accountClientV4.getAccountInfo(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
+            const err = {
                 name: "",
                 message: "",
-                code: grpc.status.INTERNAL,
+                code: grpc.status.INTERNAL
             };
             callback(err, new accountpbv4.GetAccountInfoResponse());
         });
     when(airdropClientV4.requestAirdrop(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
+            const err = {
                 name: "",
                 message: "",
-                code: grpc.status.INTERNAL,
+                code: grpc.status.INTERNAL
             };
             callback(err, new airdroppbv4.RequestAirdropResponse());
         });
     when(txClientV4.getTransaction(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
+            const err = {
                 name: "",
                 message: "",
-                code: grpc.status.INTERNAL,
+                code: grpc.status.INTERNAL
             };
             callback(err, new transactionpbv4.GetTransactionResponse());
         });
     when(txClientV4.submitTransaction(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
+            const err = {
                 name: "",
                 message: "",
-                code: grpc.status.INTERNAL,
+                code: grpc.status.INTERNAL
             };
             callback(err, new transactionpbv4.SubmitTransactionResponse());
         });
@@ -1530,30 +1531,30 @@ test('internal retry Kin 4', async () => {
 
     when(txClientV4.getServiceConfig(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
+            const err = {
                 name: "",
                 message: "",
-                code: grpc.status.INTERNAL,
+                code: grpc.status.INTERNAL
             };
             callback(err, new transactionpbv4.SubmitTransactionResponse());
         });
 
     when(txClientV4.getRecentBlockhash(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
+            const err = {
                 name: "",
                 message: "",
-                code: grpc.status.INTERNAL,
+                code: grpc.status.INTERNAL
             };
             callback(err, new transactionpbv4.GetRecentBlockhashResponse());
         });
 
     when(txClientV4.getMinimumBalanceForRentExemption(anything(), anything(), anything()))
         .thenCall((_, __, callback) => {
-            const err: grpc.ServiceError = {
+            const err = {
                 name: "",
                 message: "",
-                code: grpc.status.INTERNAL,
+                code: grpc.status.INTERNAL
             };
             callback(err, new transactionpbv4.GetMinimumBalanceForRentExemptionResponse());
         });

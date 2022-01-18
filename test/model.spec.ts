@@ -276,7 +276,7 @@ test("txDataFromProto invoice payment count mismatch", () => {
     try {
         txDataFromProto(historyItem, txpb.GetTransactionResponse.State.SUCCESS);
         fail();
-    } catch (err) {
+    } catch (err: any) {
         expect(err.stack).toContain("number of invoices");
     }
 });
@@ -567,7 +567,7 @@ test("parseTransaction create without close auth", async() => {
         try {
             parseTransaction(txs[i]);
             fail();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.toString()).toContain('missing SplToken::SetAuthority(Close) instruction');
         }
     }
@@ -606,7 +606,7 @@ test("parseTransaction invalid memo combinations", () => {
         try {
             parseTransaction(tx);
             fail();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.toString()).toContain('cannot mix earns with P2P/spends');
         }
     });
@@ -625,7 +625,7 @@ test("parseTransaction invalid memo combinations", () => {
     try {
         parseTransaction(tx);
         fail();
-    } catch (error) {
+    } catch (error: any) {
         expect(error.toString()).toContain('multiple app IDs');
     }
 
@@ -643,7 +643,7 @@ test("parseTransaction invalid memo combinations", () => {
     try {
         parseTransaction(tx);
         fail();
-    } catch (error) {
+    } catch (error: any) {
         expect(error.toString()).toContain('multiple app indexes');
     }
 
@@ -676,7 +676,7 @@ test("parseTransaction invalid memo combinations", () => {
     try {
         parseTransaction(tx, il);
         fail();
-    } catch (error) {
+    } catch (error: any) {
         expect(error.toString()).toContain('invoice list does not match exactly to one memo in the transaction');
     }
 
@@ -708,7 +708,7 @@ test("parseTransaction invalid memo combinations", () => {
     try {
         parseTransaction(tx, il);
         fail();
-    } catch (error) {
+    } catch (error: any) {
         expect(error.toString()).toContain('invoice list does not match exactly to one memo in the transaction');
     }
 
@@ -739,7 +739,7 @@ test("parseTransaction invalid memo combinations", () => {
     try {
         parseTransaction(tx, il);
         fail();
-    } catch (error) {
+    } catch (error: any) {
         expect(error.toString()).toContain('invoice list doesn\'t have sufficient invoicesi for this transaction');
     }
 
@@ -762,7 +762,7 @@ test("parseTransaction invalid memo combinations", () => {
     try {
         parseTransaction(tx, il);
         fail();
-    } catch (error) {
+    } catch (error: any) {
         expect(error.toString()).toContain('does not match number of transfers referencing the invoice list');
     }
 });

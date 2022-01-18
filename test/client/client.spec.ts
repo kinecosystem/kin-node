@@ -441,7 +441,7 @@ async function assertMergeTx(tx: Transaction, priv: PrivateKey, infos: accountpb
         expect(transfer.source.toBuffer()).toEqual(Buffer.from(info.getAccountId()!.getValue_asU8()));
         expect(transfer.dest).toEqual(dest);
         expect(transfer.owner.toBuffer()).toEqual(priv.publicKey().buffer);
-        expect(transfer.amount).toEqual(BigInt(new BigNumber(info.getBalance())));
+        expect(transfer.amount).toEqual(BigInt(new BigNumber(info.getBalance()) as any));
 
         i++;
 
@@ -580,7 +580,7 @@ test("submitPayment", async() => {
         expect(tokenInstruction.source.toBuffer()).toEqual(p.sender.publicKey().buffer);
         expect(tokenInstruction.dest.toBuffer()).toEqual(p.destination.buffer);
         expect(tokenInstruction.owner.toBuffer()).toEqual(p.sender.publicKey().buffer);
-        expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+        expect(tokenInstruction.amount).toEqual(BigInt(p.quarks as any));
 
         expect(submitReq).toBeDefined();
         expect(submitReq!.dedupeId).toEqual(p.dedupeId);
@@ -674,7 +674,7 @@ test("submitPayment with no service subsidizer", async() => {
     expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
     expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
     expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks as any));
 });
 test("submitPayment with preferred account resolution", async() => {
     const internal = mock(InternalClient);
@@ -780,7 +780,7 @@ test("submitPayment with preferred account resolution", async() => {
             expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
         }
         expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-        expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+        expect(tokenInstruction.amount).toEqual(BigInt(p.quarks as any));
     });
 
     txId = await client.submitPayment(p);
@@ -862,7 +862,7 @@ test("submitPayment with exact account resolution", async() => {
     expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
     expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
     expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks as any));
 });
 test("submitPayment with sender create", async() => {
     const internal = mock(InternalClient);
@@ -960,7 +960,7 @@ test("submitPayment with sender create", async() => {
     expect(tokenInstruction.source.toBuffer()).toEqual(sender.publicKey().buffer);
     expect(tokenInstruction.dest.toBuffer()).toEqual(dest.publicKey().buffer);
     expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks as any));
 
     // Second request with sender create
     request = requests[1];
@@ -1008,7 +1008,7 @@ test("submitPayment with sender create", async() => {
     expect(tokenInstruction.source.toBuffer()).toEqual(resolvedSender.publicKey().buffer);
     expect(tokenInstruction.dest.equals(create.newAccountPubkey)).toBeTruthy();
     expect(tokenInstruction.owner.toBuffer()).toEqual(sender.publicKey().buffer);
-    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks));
+    expect(tokenInstruction.amount).toEqual(BigInt(p.quarks as any));
 });
 test("submitPayment invalid", async () => {
     const internal = mock(InternalClient);
