@@ -491,6 +491,7 @@ export function txDataFromProto(item: txpbv4.HistoryItem, state: txpbv4.GetTrans
             try {
                 agoraMemo = Memo.fromB64String(memoParams.data, false);
                 txType = agoraMemo!.TransactionType();
+                stringMemo = memoParams.data;
             } catch (e) {
                 // not a valid agora memo
                 stringMemo = memoParams.data;
