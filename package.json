@@ -29,7 +29,7 @@
     "bs58": "^4.0.1",
     "bytebuffer": "^5.0.1",
     "express": "^4.17.1",
-    "google-protobuf": "^4.0.0-rc.2",
+    "google-protobuf": "^3.20.1",
     "grpc": "^1.24.3",
     "hash.js": "^1.1.7",
     "lru-cache": "^6.0.0",
